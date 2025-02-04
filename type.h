@@ -12,6 +12,7 @@ typedef struct Member {
 } Member;
 
 typedef enum {
+  VOID,
   I32,
   STRING,
   STRUCT,
@@ -26,6 +27,7 @@ typedef struct Type {
 
 extern Type type_table[1024];
 extern size_t type_table_length;
+
 
 static Type *create_type(String name) {
   type_table[type_table_length] = (Type) {
@@ -60,6 +62,31 @@ static Member *find_member(String name, Type *type) {
     }
   }
   return nullptr;
+}
+
+static void initialize_type_system() {
+  type_table[0] = (Type) {
+    .name = (String) { 
+      .start = "void",
+      .length = 4
+    },
+    .kind = VOID,
+  };
+  type_table[1] = (Type) {
+    .name = (String) { 
+      .start = "i32",
+      .length = 3
+    },
+    .kind = I32,
+  };
+  type_table[2] = (Type) {
+    .name = (String) { 
+      .start = "String",
+      .length = 4
+    },
+    .kind = STRING,
+  };
+  type_table_length = 3;
 }
 
 #endif

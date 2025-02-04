@@ -15,6 +15,3 @@ type Vector_2 {
   i32 x,
   i32 y,
 } 
-
-
-

@@ -3,6 +3,7 @@
 
 #include "core.h"
 #include "type.h"
+
 typedef enum {
   AST_NODE_IDENTIFIER,
   AST_NODE_NUMBER,
@@ -16,7 +17,7 @@ typedef enum {
   AST_NODE_DOT_EXPRESSION,
   AST_NODE_FUNCTION_CALL,
 
-} AST_Node_Type;
+} AST_Node_Kind;
 
 typedef struct {
   String type;
@@ -25,7 +26,8 @@ typedef struct {
 
 
 typedef struct AST {
-  AST_Node_Type type;
+  AST_Node_Kind kind;
+  Type *type;
   union {
     struct {
       bool is_extern, is_entry;
@@ -72,11 +74,11 @@ typedef struct AST_Arena {
   struct AST_Arena *next;
 } AST_Arena;
 
-static AST *ast_arena_alloc(AST_Arena *arena, AST_Node_Type type) {
+static AST *ast_arena_alloc(AST_Arena *arena, AST_Node_Kind kind) {
   if (arena->nodes_length < 1024) {
     AST *node = &arena->nodes[arena->nodes_length++];
-    node->type = type;
-    switch (type) {
+    node->kind = kind;
+    switch (kind) {
     case AST_NODE_IDENTIFIER: {
       node->identifier = (String){0};
     } break;
@@ -105,6 +107,7 @@ static AST *ast_arena_alloc(AST_Arena *arena, AST_Node_Type type) {
       node->function_call = (typeof(node->function_call)){0};
     } break;
     }
+    node->type = nullptr;
     return node;
   } else {
     if (arena->next == NULL) {
@@ -112,7 +115,7 @@ static AST *ast_arena_alloc(AST_Arena *arena, AST_Node_Type type) {
       arena->next->nodes_length = 0;
       arena->next->next = NULL;
     }
-    return ast_arena_alloc(arena->next, type);
+    return ast_arena_alloc(arena->next, kind);
   }
 }
 
