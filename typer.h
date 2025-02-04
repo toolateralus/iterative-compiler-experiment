@@ -6,7 +6,6 @@
 typedef enum {
   UNRESOLVED,
   COMPLETE,
-  ERROR,
 } Typer_Progress;
 
 Typer_Progress typer_identifier(AST *node);
@@ -20,7 +19,7 @@ Typer_Progress typer_dot_expression(AST *node);
 Typer_Progress typer_function_call(AST *node);
 Typer_Progress typer_block(AST *node);
 
-Typer_Progress typer_resolve(AST *node) {
+static inline Typer_Progress typer_resolve(AST *node) {
   switch (node->kind) {
   case AST_NODE_IDENTIFIER:
     return typer_identifier(node);

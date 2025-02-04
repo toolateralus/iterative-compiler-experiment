@@ -2,6 +2,7 @@
 #include "parser.h"
 #include "type.h"
 #include <stdio.h>
+#include "typer.h"
 
 Type type_table[1024] = {0};
 size_t type_table_length = 0;
@@ -25,7 +26,7 @@ int main(int argc, char *argv[]) {
   lexer_state_read_file(&state, "max.it");
   AST_Arena arena = {0};
   AST program;
-
+  initialize_type_system();
   while (1) {
     AST *node = parse_next_statement(&arena, &state, &program);
     if (!node)
@@ -34,6 +35,18 @@ int main(int argc, char *argv[]) {
   }
 
   printf("parsed %ld statements\n", program.statements.length);
+
+  while (1) {
+    bool done = true;
+    for (int i = 0; i < program.statements.length; ++i) {
+      if (typer_resolve(program.statements.data[i]) == UNRESOLVED) {
+        done = false;
+      }
+    }
+    if (done) break;
+  }
+
+  printf("completed type checking\n");
 
   free_lexer_state(&state);
   return 0;

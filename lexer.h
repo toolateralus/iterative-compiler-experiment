@@ -137,8 +137,7 @@ static Keyword keyword_map[] = {
 static Token get_token(Lexer_State *state) {
   Token token;
   token.type = TOKEN_EOF_OR_INVALID;
-  token.value.start = nullptr;
-  token.value.length = 0;
+  token.value = String_new(nullptr, 0);
 
   while (1) {
     char c = lexer_state_get_character(state);
@@ -152,25 +151,27 @@ static Token get_token(Lexer_State *state) {
 
     if (c == '"') {
       token.type = TOKEN_STRING;
-      token.value.start = &state->content[state->position];
-      token.value.length = 0;
+      char *start = &state->content[state->position];
+      size_t length = 0;
       while ((c = lexer_state_get_character(state)) != '"' && c != EOF) {
-        token.value.length++;
+        length++;
       }
       if (c == EOF) {
         token.type = TOKEN_EOF_OR_INVALID;
       }
+      token.value = String_new(start, length);
       return token;
     }
 
     if (isalpha(c) || c == '_') {
       token.type = TOKEN_IDENTIFIER;
-      token.value.start = &state->content[state->position - 1];
-      token.value.length = 1;
+      char *start = &state->content[state->position - 1];
+      size_t length = 1;
       while (isalnum(c = lexer_state_get_character(state)) || c == '_') {
-        token.value.length++;
+        length++;
       }
       state->position--; // Unread the last character
+      token.value = String_new(start, length);
       for (int i = 0; i < sizeof(keyword_map) / sizeof(Keyword); ++i) {
         if (String_equals(token.value, keyword_map[i].key)) {
           token.type = keyword_map[i].value;
@@ -180,17 +181,17 @@ static Token get_token(Lexer_State *state) {
       return token;
     } else if (isdigit(c)) {
       token.type = TOKEN_NUMBER;
-      token.value.start = &state->content[state->position - 1];
-      token.value.length = 1;
+      char *start = &state->content[state->position - 1];
+      size_t length = 1;
       while (isdigit(c = lexer_state_get_character(state))) {
-        token.value.length++;
+        length++;
       }
       state->position--; // Unread the last character
+      token.value = String_new(start, length);
       return token;
     } else if (ispunct(c)) {
       token.type = punctuation_map[c];
-      token.value.start = &state->content[state->position - 1];
-      token.value.length = 1;
+      token.value = String_new(&state->content[state->position - 1], 1);
       return token;
     } else {
       return token;

@@ -103,7 +103,7 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state, AST *paren
   node->parent = parent;
   token_expect(state, TOKEN_OPEN_PAREN);
   while (token_peek(state).type != TOKEN_CLOSE_PAREN) {
-    Parameter param;
+    AST_Parameter param = {0};
     if (token_peek(state).type == TOKEN_DOT &&
         token_lookahead(state, 1).type == TOKEN_DOT &&
         token_lookahead(state, 2).type == TOKEN_DOT) {
@@ -113,14 +113,13 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state, AST *paren
       param.is_varargs = true;
     } else {
       param.type = token_expect(state, TOKEN_IDENTIFIER).value;
-      if (token_peek(state).type != TOKEN_COMMA &&
-          token_peek(state).type != TOKEN_CLOSE_PAREN) {
+      if (token_peek(state).type != TOKEN_COMMA && token_peek(state).type != TOKEN_CLOSE_PAREN) {
         param.name = token_expect(state, TOKEN_IDENTIFIER).value;
       }
     }
 
-    node->function_declaration
-        .parameters[node->function_declaration.parameters_length++] = param;
+    node->function_declaration.parameters[node->function_declaration.parameters_length++] = param;
+
     if (token_peek(state).type != TOKEN_CLOSE_PAREN) {
       token_expect(state, TOKEN_COMMA);
     }
@@ -204,4 +203,43 @@ AST *parse_next_statement(AST_Arena *arena, Lexer_State *state, AST *parent) {
     exit(1);
   }
   }
+}
+
+void insert_symbol(AST *scope, String name, AST *node, Type *type) {
+  if (name.length == 0) exit(1);
+
+  printf("Inserting symbol: %.*s\n", name.length, name.start);
+  auto symbol = find_symbol(scope, name);
+  if (symbol) {
+    char buffer[1024];
+    memcpy(buffer, name.start, name.length);
+    buffer[name.length] = '\0'; // Null-terminate the string
+    fprintf(stderr, "re-declaration of symbol %s\n", buffer);
+    exit(1);
+  }
+  symbol = &scope->symbol_table;
+  while (symbol->next) {
+    symbol = symbol->next;
+  }
+  symbol->next = malloc(sizeof(Symbol));
+  symbol->next->name = name;
+  symbol->next->node = node;
+  symbol->next->type = type;
+  symbol->next->next = NULL; // Initialize the next pointer
+}
+
+Symbol *find_symbol(AST *scope, String name) {
+  printf("Finding symbol: %.*s\n", name.length, name.start);
+  auto symbol = &scope->symbol_table;
+  while (symbol) {
+    if (Strings_compare(symbol->name, name)) {
+      printf("Symbol found: %.*s\n", name.length, name.start);
+      return symbol;
+    }
+    symbol = symbol->next;
+  }
+  if (scope->parent) {
+    return find_symbol(scope->parent, name);
+  }
+  return NULL;
 }

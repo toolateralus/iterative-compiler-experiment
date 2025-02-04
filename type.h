@@ -46,7 +46,7 @@ static Type *find_type(String name) {
   return nullptr;
 }
 
-static Type_Member *find_member(String name, Type *type) {
+static Type_Member *find_member(Type *type, String name) {
   for (int i = 0; i < type->members_length; ++i) {
     if (Strings_compare(type->members[i].name, name)) {
       return &type->members[i];
@@ -73,7 +73,7 @@ static void initialize_type_system() {
   type_table[2] = (Type) {
     .name = (String) { 
       .start = "String",
-      .length = 4
+      .length = 6
     },
     .kind = STRING,
   };

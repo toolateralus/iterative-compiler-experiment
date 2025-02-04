@@ -40,7 +40,7 @@ typedef struct {
   String type;
   String name;
   bool is_varargs;
-} Parameter;
+} AST_Parameter;
 
 typedef struct {
   String type;
@@ -55,15 +55,25 @@ typedef struct AST_List {
   size_t capacity;
 } AST_List;
 
+typedef struct Symbol {
+  String name;
+  AST *node;
+  Type *type;
+  struct Symbol *next;
+} Symbol;
+
 typedef struct AST {
+  bool typing_complete;
   AST_Node_Kind kind;
   Type *type;
+  Symbol symbol_table;
+
   struct AST *parent;
   union {
     struct {
       String name;
       bool is_extern, is_entry;
-      Parameter parameters[12];
+      AST_Parameter parameters[12];
       size_t parameters_length;
       struct AST *body;
     } function_declaration;
@@ -105,21 +115,9 @@ typedef struct AST {
   };
 } AST;
 
+Symbol *find_symbol(AST *scope, String name);
 
-static void ast_list_push(AST_List *list, AST *node) {
-  if (list->length >= list->capacity) {
-    list->capacity = list->capacity ? list->capacity * 4 : 1;
-    list->data = (AST **)realloc(list->data, list->capacity * sizeof(AST *));
-  }
-  list->data[list->length++] = node;
-}
-
-static AST *ast_list_pop(AST_List *list) {
-  if (list->length == 0) {
-    return NULL;
-  }
-  return list->data[--list->length];
-}
+void insert_symbol(AST *scope, String name, AST *node, Type *type);
 
 typedef struct AST_Arena {
   AST nodes[1024];
@@ -190,4 +188,19 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state, AST *parent);
 AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state, AST *parent);
 AST *parse_type_declaration(AST_Arena *arena, Lexer_State *state, AST *parent);
 
+
+static void ast_list_push(AST_List *list, AST *node) {
+  if (list->length >= list->capacity) {
+    list->capacity = list->capacity ? list->capacity * 4 : 1;
+    list->data = (AST **)realloc(list->data, list->capacity * sizeof(AST *));
+  }
+  list->data[list->length++] = node;
+}
+
+static AST *ast_list_pop(AST_List *list) {
+  if (list->length == 0) {
+    return NULL;
+  }
+  return list->data[--list->length];
+}
 #endif
