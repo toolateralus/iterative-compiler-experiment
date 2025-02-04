@@ -18,7 +18,7 @@ Typer_Progress typer_identifier(AST *node) {
 Typer_Progress typer_number(AST *node) {
   if (node->typing_complete) return COMPLETE;
   const static String string = {
-      .start = "i32",
+      .data = "i32",
       .length = 3,
   };
   node->type = find_type(string);
@@ -29,7 +29,7 @@ Typer_Progress typer_number(AST *node) {
 Typer_Progress typer_string(AST *node) {
   if (node->typing_complete) return COMPLETE;
   const static String string = {
-      .start = "String",
+      .data = "String",
       .length = 6,
   };
   node->type = find_type(string);
@@ -147,6 +147,14 @@ Typer_Progress typer_dot_expression(AST *node) {
     return UNRESOLVED;
 
   node->type = find_member(left_type, node->dot_expression.right)->type;
+
+  if (node->dot_expression.assignment_value) {
+    Typer_Progress progress = typer_resolve(node->dot_expression.assignment_value);
+    if (progress != COMPLETE) {
+      return UNRESOLVED;
+    } 
+  }
+
   node->typing_complete = true;
   return COMPLETE;
 }

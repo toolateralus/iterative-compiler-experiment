@@ -206,15 +206,9 @@ AST *parse_next_statement(AST_Arena *arena, Lexer_State *state, AST *parent) {
 }
 
 void insert_symbol(AST *scope, String name, AST *node, Type *type) {
-  if (name.length == 0) exit(1);
-
-  printf("Inserting symbol: %.*s\n", name.length, name.start);
   auto symbol = find_symbol(scope, name);
   if (symbol) {
-    char buffer[1024];
-    memcpy(buffer, name.start, name.length);
-    buffer[name.length] = '\0'; // Null-terminate the string
-    fprintf(stderr, "re-declaration of symbol %s\n", buffer);
+    fprintf(stderr, "re-declaration of symbol %s\n", name.data);
     exit(1);
   }
   symbol = &scope->symbol_table;
@@ -229,11 +223,9 @@ void insert_symbol(AST *scope, String name, AST *node, Type *type) {
 }
 
 Symbol *find_symbol(AST *scope, String name) {
-  printf("Finding symbol: %.*s\n", name.length, name.start);
   auto symbol = &scope->symbol_table;
   while (symbol) {
     if (Strings_compare(symbol->name, name)) {
-      printf("Symbol found: %.*s\n", name.length, name.start);
       return symbol;
     }
     symbol = symbol->next;

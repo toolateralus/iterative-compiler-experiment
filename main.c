@@ -12,7 +12,7 @@ void debug_print_all_tokens(Lexer_State *state) {
     Token token = token_eat(state);
     char buffer[1024];
     memset(buffer, 0, 1024);
-    memcpy(buffer, token.value.start, token.value.length);
+    memcpy(buffer, token.value.data, token.value.length);
     printf("%-5d :: %-25s -> '%s'\n", token.type, Token_Type_Name(token.type),
            buffer);
     if (token.type == TOKEN_EOF_OR_INVALID) {

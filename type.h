@@ -58,21 +58,21 @@ static Type_Member *find_member(Type *type, String name) {
 static void initialize_type_system() {
   type_table[0] = (Type) {
     .name = (String) { 
-      .start = "void",
+      .data = "void",
       .length = 4
     },
     .kind = VOID,
   };
   type_table[1] = (Type) {
     .name = (String) { 
-      .start = "i32",
+      .data = "i32",
       .length = 3
     },
     .kind = I32,
   };
   type_table[2] = (Type) {
     .name = (String) { 
-      .start = "String",
+      .data = "String",
       .length = 6
     },
     .kind = STRING,
