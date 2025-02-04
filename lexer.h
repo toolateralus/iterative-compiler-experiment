@@ -18,7 +18,7 @@ typedef enum {
   TOKEN_I32_KEYWORD,
 
   TOKEN_AT,
-  TOKEN_COLON,
+  TOKEN_DOT,
   TOKEN_COMMA,
   TOKEN_ASSIGN,
   TOKEN_SEMICOLON,
@@ -48,7 +48,7 @@ const char *Token_Type_Name(Token_Type type) {
     return "TOKEN_I32_KEYWORD";
   case TOKEN_AT:
     return "TOKEN_AT";
-  case TOKEN_COLON:
+  case TOKEN_DOT:
     return "TOKEN_COLON";
   case TOKEN_COMMA:
     return "TOKEN_COMMA";
@@ -71,8 +71,7 @@ const char *Token_Type_Name(Token_Type type) {
 
 typedef struct {
   Token_Type type;
-  const char *start;
-  size_t length;
+  String value;
 } Token;
 
 typedef struct {
@@ -120,12 +119,12 @@ static char lexer_state_get_character(Lexer_State *state) {
   return state->content[state->position++];
 }
 
-constexpr static Token_Type punctuation_map['}' + 1] = {
-    ['@'] = TOKEN_AT,          [':'] = TOKEN_COLON,
-    ['='] = TOKEN_ASSIGN,      [';'] = TOKEN_SEMICOLON,
-    [','] = TOKEN_COMMA,       ['('] = TOKEN_OPEN_PAREN,
-    [')'] = TOKEN_CLOSE_PAREN, ['{'] = TOKEN_OPEN_CURLY,
-    ['}'] = TOKEN_CLOSE_CURLY,
+constexpr static Token_Type punctuation_map[255] = {
+  ['@'] = TOKEN_AT,          ['.'] = TOKEN_DOT,
+  ['='] = TOKEN_ASSIGN,      [';'] = TOKEN_SEMICOLON,
+  [','] = TOKEN_COMMA,       ['('] = TOKEN_OPEN_PAREN,
+  [')'] = TOKEN_CLOSE_PAREN, ['{'] = TOKEN_OPEN_CURLY,
+  ['}'] = TOKEN_CLOSE_CURLY,
 };
 
 typedef struct Keyword {
@@ -134,16 +133,16 @@ typedef struct Keyword {
 } Keyword;
 
 static Keyword keyword_map[] = {
-    {"fn", TOKEN_FN_KEYWORD},
-    {"type", TOKEN_TYPE_KEYWORD},
-    {"i32", TOKEN_I32_KEYWORD},
+  {"fn", TOKEN_FN_KEYWORD},
+  {"type", TOKEN_TYPE_KEYWORD},
+  {"i32", TOKEN_I32_KEYWORD},
 };
 
 static Token get_token(Lexer_State *state) {
   Token token;
   token.type = TOKEN_EOF_OR_INVALID;
-  token.start = nullptr;
-  token.length = 0;
+  token.value.start = nullptr;
+  token.value.length = 0;
 
   while (1) {
     char c = lexer_state_get_character(state);
@@ -157,10 +156,10 @@ static Token get_token(Lexer_State *state) {
 
     if (c == '"') {
       token.type = TOKEN_STRING;
-      token.start = &state->content[state->position];
-      token.length = 0;
+      token.value.start = &state->content[state->position];
+      token.value.length = 0;
       while ((c = lexer_state_get_character(state)) != '"' && c != EOF) {
-        token.length++;
+        token.value.length++;
       }
       if (c == EOF) {
         token.type = TOKEN_EOF_OR_INVALID;
@@ -170,14 +169,14 @@ static Token get_token(Lexer_State *state) {
 
     if (isalpha(c) || c == '_') {
       token.type = TOKEN_IDENTIFIER;
-      token.start = &state->content[state->position - 1];
-      token.length = 1;
+      token.value.start = &state->content[state->position - 1];
+      token.value.length = 1;
       while (isalnum(c = lexer_state_get_character(state)) || c == '_') {
-        token.length++;
+        token.value.length++;
       }
       state->position--; // Unread the last character
       for (int i = 0; i < sizeof(keyword_map) / sizeof(Keyword); ++i) {
-        if (strncmp(keyword_map[i].key, token.start, token.length) == 0) {
+        if (strncmp(keyword_map[i].key, token.value.start, token.value.length) == 0) {
           token.type = keyword_map[i].value;
           break;
         }
@@ -185,17 +184,17 @@ static Token get_token(Lexer_State *state) {
       return token;
     } else if (isdigit(c)) {
       token.type = TOKEN_NUMBER;
-      token.start = &state->content[state->position - 1];
-      token.length = 1;
+      token.value.start = &state->content[state->position - 1];
+      token.value.length = 1;
       while (isdigit(c = lexer_state_get_character(state))) {
-        token.length++;
+        token.value.length++;
       }
       state->position--; // Unread the last character
       return token;
     } else if (ispunct(c)) {
       token.type = punctuation_map[c];
-      token.start = &state->content[state->position - 1];
-      token.length = 1;
+      token.value.start = &state->content[state->position - 1];
+      token.value.length = 1;
       return token;
     } else {
       return token;

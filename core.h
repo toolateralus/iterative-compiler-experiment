@@ -9,4 +9,8 @@ static void panic(const char *message) {
   exit(1);
 }
 
+typedef struct {
+  const char *start;
+  int length;
+} String;
 #endif
