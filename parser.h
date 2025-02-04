@@ -6,6 +6,7 @@
 #include "type.h"
 
 typedef enum {
+  AST_NODE_PROGRAM,
   AST_NODE_IDENTIFIER,
   AST_NODE_NUMBER,
   AST_NODE_STRING,
@@ -22,6 +23,7 @@ typedef enum {
 } AST_Node_Kind;
 
 static const char *Node_Kind_String[] = {
+  "AST_NODE_PROGRAM",
   "AST_NODE_IDENTIFIER",
   "AST_NODE_NUMBER",
   "AST_NODE_STRING",
@@ -130,6 +132,7 @@ static AST *ast_arena_alloc(AST_Arena *arena, AST_Node_Kind kind) {
     AST *node = &arena->nodes[arena->nodes_length++];
     node->kind = kind;
     switch (kind) {
+    case AST_NODE_PROGRAM:
     case AST_NODE_BLOCK: {
       memset(&node->statements, 0, sizeof(node->statements));
     } break;
