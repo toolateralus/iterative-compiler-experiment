@@ -17,8 +17,9 @@ typedef enum {
   STRING,
   STRUCT,
 } Type_Kind;
-
+typedef struct AST AST;
 typedef struct Type {
+  AST *declaring_node;
   Type_Kind kind;
   String name;
   Type_Member members[12];
@@ -28,9 +29,10 @@ typedef struct Type {
 extern Type type_table[1024];
 extern size_t type_table_length;
 
-static Type *create_type(String name) {
+static Type *create_type(AST *declaring_node, String name) {
   type_table[type_table_length] = (Type) {
     .name = name,
+    .declaring_node = declaring_node,
   };
   Type *type = &type_table[type_table_length];
   type_table_length++;

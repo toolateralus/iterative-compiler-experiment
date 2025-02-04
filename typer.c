@@ -60,7 +60,7 @@ Typer_Progress typer_function_declaration(AST *node) {
 
   if (!node->function_declaration.is_extern) {
     // Resolve the function body
-    Typer_Progress body_progress = typer_resolve(node->function_declaration.body);
+    Typer_Progress body_progress = typer_resolve(node->function_declaration.block);
     if (body_progress != COMPLETE)
       return UNRESOLVED;
   }
@@ -80,7 +80,7 @@ Typer_Progress typer_type_declaration(AST *node) {
     insert_symbol(node, node->type_declaration.members[i].name, node,
                   member_type);
   }
-  Type *type = create_type(node->type_declaration.name);
+  Type *type = create_type(node, node->type_declaration.name);
 
   for (size_t i = 0; i < node->type_declaration.members_length; ++i) {
     Type *member_type = find_type(node->type_declaration.members[i].type);

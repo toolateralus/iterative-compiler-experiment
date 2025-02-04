@@ -64,6 +64,7 @@ typedef struct Symbol {
 
 typedef struct AST {
   bool typing_complete;
+  bool emitted;
   AST_Node_Kind kind;
   Type *type;
   Symbol symbol_table;
@@ -75,7 +76,7 @@ typedef struct AST {
       bool is_extern, is_entry;
       AST_Parameter parameters[12];
       size_t parameters_length;
-      struct AST *body;
+      struct AST *block;
     } function_declaration;
 
     struct {

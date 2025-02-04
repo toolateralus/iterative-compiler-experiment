@@ -142,7 +142,7 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state, AST *paren
     token_expect(state, TOKEN_SEMICOLON);
     return node;
   }
-  node->function_declaration.body = parse_block(arena, state, node);
+  node->function_declaration.block = parse_block(arena, state, node);
   return node;
 }
 
