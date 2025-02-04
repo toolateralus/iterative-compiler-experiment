@@ -2,6 +2,7 @@
 #define PARSER_H
 
 #include "core.h"
+#include "lexer.h"
 #include "type.h"
 
 typedef enum {
@@ -16,23 +17,52 @@ typedef enum {
   AST_NODE_ASSIGNMENT,
   AST_NODE_DOT_EXPRESSION,
   AST_NODE_FUNCTION_CALL,
-
+  
+  AST_NODE_BLOCK,
 } AST_Node_Kind;
+
+static const char *Node_Kind_String[] = {
+  "AST_NODE_IDENTIFIER",
+  "AST_NODE_NUMBER",
+  "AST_NODE_STRING",
+  "AST_NODE_FUNCTION_DECLARATION",
+  "AST_NODE_TYPE_DECLARATION",
+  "AST_NODE_VARIABLE_DECLARATION",
+  "AST_NODE_ASSIGNMENT",
+  "AST_NODE_DOT_EXPRESSION",
+  "AST_NODE_FUNCTION_CALL",
+  "AST_NODE_BLOCK",
+};
 
 typedef struct {
   String type;
   String name;
+  bool is_varargs;
 } Parameter;
 
+typedef struct {
+  String type;
+  String name;
+} AST_Type_Member;
+
+typedef struct AST AST;
+
+typedef struct AST_List {
+  AST **data;
+  size_t length;
+  size_t capacity;
+} AST_List;
 
 typedef struct AST {
   AST_Node_Kind kind;
   Type *type;
   union {
     struct {
+      String name;
       bool is_extern, is_entry;
       Parameter parameters[12];
       size_t parameters_length;
+      struct AST *body;
     } function_declaration;
 
     struct {
@@ -49,7 +79,8 @@ typedef struct AST {
 
     struct {
       String name;
-      Member members[12];
+      AST_Type_Member members[12];
+      size_t members_length;
     } type_declaration;
 
     struct {
@@ -62,11 +93,30 @@ typedef struct AST {
       struct AST *right;
     } assignment;
 
+    AST_List block;
+
     String string;
     String identifier;
     String number;
   };
 } AST;
+
+
+static void ast_list_push(AST_List *list, AST *node) {
+  if (list->length >= list->capacity) {
+    list->capacity = list->capacity ? list->capacity * 4 : 1;
+    list->data = (AST **)realloc(list->data, list->capacity * sizeof(AST *));
+  }
+  list->data[list->length++] = node;
+}
+
+static AST *ast_list_pop(AST_List *list) {
+  if (list->length == 0) {
+    return NULL;
+  }
+  return list->data[--list->length];
+}
+
 
 typedef struct AST_Arena {
   AST nodes[1024];
@@ -79,32 +129,35 @@ static AST *ast_arena_alloc(AST_Arena *arena, AST_Node_Kind kind) {
     AST *node = &arena->nodes[arena->nodes_length++];
     node->kind = kind;
     switch (kind) {
+    case AST_NODE_BLOCK: {
+      memset(&node->block, 0, sizeof(node->block));
+    } break;
     case AST_NODE_IDENTIFIER: {
-      node->identifier = (String){0};
+      memset(&node->identifier, 0, sizeof(node->identifier));
     } break;
     case AST_NODE_NUMBER: {
-      node->number = (String){0};
+      memset(&node->number, 0, sizeof(node->number));
     } break;
     case AST_NODE_STRING: {
-      node->string = (String){0};
+      memset(&node->string, 0, sizeof(node->string));
     } break;
     case AST_NODE_FUNCTION_DECLARATION: {
-      node->function_declaration = (typeof(node->function_declaration)){0};
+      memset(&node->function_declaration, 0, sizeof(node->function_declaration));
     } break;
     case AST_NODE_TYPE_DECLARATION: {
-      node->type_declaration = (typeof(node->type_declaration)){0};
+      memset(&node->type_declaration, 0, sizeof(node->type_declaration));
     } break;
     case AST_NODE_VARIABLE_DECLARATION: {
-      node->variable_declaration = (typeof(node->variable_declaration)){0};
+      memset(&node->variable_declaration, 0, sizeof(node->variable_declaration));
     } break;
     case AST_NODE_ASSIGNMENT: {
-      node->assignment = (typeof(node->assignment)){0};
+      memset(&node->assignment, 0, sizeof(node->assignment));
     } break;
     case AST_NODE_DOT_EXPRESSION: {
-      node->dot_expression = (typeof(node->dot_expression)){0};
+      memset(&node->dot_expression, 0, sizeof(node->dot_expression));
     } break;
     case AST_NODE_FUNCTION_CALL: {
-      node->function_call = (typeof(node->function_call)){0};
+      memset(&node->function_call, 0, sizeof(node->function_call));
     } break;
     }
     node->type = nullptr;
@@ -126,5 +179,11 @@ static void ast_arena_free(AST_Arena *arena) {
     arena = next;
   }
 }
+
+AST *parse_next_statement(AST_Arena *arena, Lexer_State *state);
+AST *parse_block(AST_Arena *arena, Lexer_State *state);
+AST *parse_expression(AST_Arena *arena, Lexer_State *state);
+AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state);
+AST *parse_type_declaration(AST_Arena *arena, Lexer_State *state);
 
 #endif

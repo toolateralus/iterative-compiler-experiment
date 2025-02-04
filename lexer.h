@@ -15,7 +15,6 @@ typedef enum {
 
   TOKEN_FN_KEYWORD,
   TOKEN_TYPE_KEYWORD,
-  TOKEN_I32_KEYWORD,
 
   TOKEN_AT,
   TOKEN_DOT,
@@ -30,7 +29,7 @@ typedef enum {
   TOKEN_CLOSE_CURLY,
 } Token_Type;
 
-const char *Token_Type_Name(Token_Type type) {
+static const char *Token_Type_Name(Token_Type type) {
   switch (type) {
   case TOKEN_EOF_OR_INVALID:
     return "TOKEN_EOF_OR_INVALID";
@@ -44,12 +43,10 @@ const char *Token_Type_Name(Token_Type type) {
     return "TOKEN_FN_KEYWORD";
   case TOKEN_TYPE_KEYWORD:
     return "TOKEN_TYPE_KEYWORD";
-  case TOKEN_I32_KEYWORD:
-    return "TOKEN_I32_KEYWORD";
   case TOKEN_AT:
     return "TOKEN_AT";
   case TOKEN_DOT:
-    return "TOKEN_COLON";
+    return "TOKEN_DOT";
   case TOKEN_COMMA:
     return "TOKEN_COMMA";
   case TOKEN_ASSIGN:
@@ -120,11 +117,11 @@ static char lexer_state_get_character(Lexer_State *state) {
 }
 
 constexpr static Token_Type punctuation_map[255] = {
-  ['@'] = TOKEN_AT,          ['.'] = TOKEN_DOT,
-  ['='] = TOKEN_ASSIGN,      [';'] = TOKEN_SEMICOLON,
-  [','] = TOKEN_COMMA,       ['('] = TOKEN_OPEN_PAREN,
-  [')'] = TOKEN_CLOSE_PAREN, ['{'] = TOKEN_OPEN_CURLY,
-  ['}'] = TOKEN_CLOSE_CURLY,
+    ['@'] = TOKEN_AT,          ['.'] = TOKEN_DOT,
+    ['='] = TOKEN_ASSIGN,      [';'] = TOKEN_SEMICOLON,
+    [','] = TOKEN_COMMA,       ['('] = TOKEN_OPEN_PAREN,
+    [')'] = TOKEN_CLOSE_PAREN, ['{'] = TOKEN_OPEN_CURLY,
+    ['}'] = TOKEN_CLOSE_CURLY,
 };
 
 typedef struct Keyword {
@@ -135,7 +132,6 @@ typedef struct Keyword {
 static Keyword keyword_map[] = {
   {"fn", TOKEN_FN_KEYWORD},
   {"type", TOKEN_TYPE_KEYWORD},
-  {"i32", TOKEN_I32_KEYWORD},
 };
 
 static Token get_token(Lexer_State *state) {
@@ -176,7 +172,7 @@ static Token get_token(Lexer_State *state) {
       }
       state->position--; // Unread the last character
       for (int i = 0; i < sizeof(keyword_map) / sizeof(Keyword); ++i) {
-        if (strncmp(keyword_map[i].key, token.value.start, token.value.length) == 0) {
+        if (String_equals(token.value, keyword_map[i].key)) {
           token.type = keyword_map[i].value;
           break;
         }
@@ -233,7 +229,11 @@ static Token token_lookahead(Lexer_State *state, int n) {
 
 static Token token_expect(Lexer_State *state, Token_Type type) {
   Token token = token_peek(state);
-  assert(token.type == type && "Unexpected token");
+  if (token.type != type) {
+    fprintf(stderr, "Error: expected %s, but got %s\n", Token_Type_Name(type),
+            Token_Type_Name(token.type));
+    exit(1);
+  }
   return token_eat(state);
 }
 

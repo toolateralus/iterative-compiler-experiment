@@ -9,25 +9,24 @@ typedef struct Type Type;
 typedef struct Member {
   String name;
   Type *type;
-} Member;
+} Type_Member;
 
 typedef enum {
   VOID,
   I32,
   STRING,
   STRUCT,
-} TypeKind;
+} Type_Kind;
 
 typedef struct Type {
-  TypeKind kind;
+  Type_Kind kind;
   String name;
-  Member members[12];
+  Type_Member members[12];
   size_t members_length;
 } Type;
 
 extern Type type_table[1024];
 extern size_t type_table_length;
-
 
 static Type *create_type(String name) {
   type_table[type_table_length] = (Type) {
@@ -40,24 +39,16 @@ static Type *create_type(String name) {
 
 static Type *find_type(String name) {
   for (int i = 0; i < type_table_length; ++i) {
-    auto longest = name.length > type_table[i].name.length
-                       ? name.length
-                       : type_table[i].name.length;
-
-    if (strncmp(type_table[i].name.start, name.start, longest) == 0) {
+    if (Strings_compare(type_table[i].name, name)) {
       return &type_table[i];
     }
   }
   return nullptr;
 }
 
-static Member *find_member(String name, Type *type) {
+static Type_Member *find_member(String name, Type *type) {
   for (int i = 0; i < type->members_length; ++i) {
-    auto longest = name.length > type->members[i].name.length
-                       ? name.length
-                       : type->members[i].name.length;
-
-    if (strncmp(type->members[i].name.start, name.start, longest) == 0) {
+    if (Strings_compare(type->members[i].name, name)) {
       return &type->members[i];
     }
   }

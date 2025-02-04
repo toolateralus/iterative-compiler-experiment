@@ -4,14 +4,14 @@ fn main() @entry {
   printf("%d\n", x);
 }
 
-extern fn printf(String, ...);
+fn printf(String, ...) @extern;
 
-type Vector_3 {
+type Vector_3() {
   Vector_2 xy,
   i32 z,
 }
 
-type Vector_2 {
+type Vector_2() {
   i32 x,
   i32 y,
 } 

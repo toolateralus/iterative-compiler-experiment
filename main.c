@@ -23,7 +23,15 @@ void debug_print_all_tokens(Lexer_State *state) {
 int main(int argc, char *argv[]) {
   Lexer_State state;
   lexer_state_read_file(&state, "max.it");
+  AST_Arena arena = {0};
+  AST_List program = {0};
 
+  while (1) {
+    AST *node = parse_next_statement(&arena, &state);
+    if (!node)
+      break;
+    ast_list_push(&program, node);
+  }
 
   free_lexer_state(&state);
   return 0;
