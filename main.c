@@ -9,7 +9,7 @@ int main(int argc, char *argv[]) {
     char buffer[1024];
     memset(buffer, 0, 1024);
     memcpy(buffer, token.start, token.length);
-    printf("%d :: %s -> %s\n", token.type, Token_Type_Name(token.type), buffer);
+    printf("%-5d :: %-25s -> '%s'\n", token.type, Token_Type_Name(token.type), buffer);
     if (token.type == TOKEN_EOF_OR_INVALID) break;
   } 
 	return 0;
