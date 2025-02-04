@@ -20,6 +20,11 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state) {
       dot_node->dot_expression.left = token.value;
       dot_node->dot_expression.right =
           token_expect(state, TOKEN_IDENTIFIER).value;
+      if (token_peek(state).type == TOKEN_ASSIGN) { // Parse dot assignment
+        token_eat(state); // Consume '='
+        dot_node->dot_expression.assignment_value = parse_expression(arena, state);
+        token_expect(state, TOKEN_SEMICOLON);
+      }
       return dot_node;
     }
 
@@ -89,7 +94,6 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state) {
   node->function_declaration.name = name;
   token_expect(state, TOKEN_OPEN_PAREN);
   while (token_peek(state).type != TOKEN_CLOSE_PAREN) {
-
     Parameter param;
     if (token_peek(state).type == TOKEN_DOT &&
         token_lookahead(state, 1).type == TOKEN_DOT &&

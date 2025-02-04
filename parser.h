@@ -86,6 +86,7 @@ typedef struct AST {
     struct {
       String left;
       String right;
+      struct AST *assignment_value;
     } dot_expression;
 
     struct {

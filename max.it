@@ -1,6 +1,7 @@
-fn main() @entry {
+fn main(String) @entry {
   Vector_2 dependent;
   i32 x = dependent.x;
+  dependent.x = 100;
   printf("%d\n", x);
 }
 
@@ -13,5 +14,5 @@ type Vector_3() {
 
 type Vector_2() {
   i32 x,
-  i32 y,
+  i32 y
 } 

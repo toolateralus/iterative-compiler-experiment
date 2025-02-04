@@ -33,6 +33,8 @@ int main(int argc, char *argv[]) {
     ast_list_push(&program, node);
   }
 
+  printf("parsed %ld statements\n", program.length);
+
   free_lexer_state(&state);
   return 0;
 }
