@@ -56,6 +56,7 @@ typedef struct AST_List {
 typedef struct AST {
   AST_Node_Kind kind;
   Type *type;
+  struct AST *parent;
   union {
     struct {
       String name;
@@ -94,7 +95,7 @@ typedef struct AST {
       struct AST *right;
     } assignment;
 
-    AST_List block;
+    AST_List statements;
 
     String string;
     String identifier;
@@ -118,7 +119,6 @@ static AST *ast_list_pop(AST_List *list) {
   return list->data[--list->length];
 }
 
-
 typedef struct AST_Arena {
   AST nodes[1024];
   size_t nodes_length;
@@ -131,7 +131,7 @@ static AST *ast_arena_alloc(AST_Arena *arena, AST_Node_Kind kind) {
     node->kind = kind;
     switch (kind) {
     case AST_NODE_BLOCK: {
-      memset(&node->block, 0, sizeof(node->block));
+      memset(&node->statements, 0, sizeof(node->statements));
     } break;
     case AST_NODE_IDENTIFIER: {
       memset(&node->identifier, 0, sizeof(node->identifier));
@@ -181,10 +181,10 @@ static void ast_arena_free(AST_Arena *arena) {
   }
 }
 
-AST *parse_next_statement(AST_Arena *arena, Lexer_State *state);
-AST *parse_block(AST_Arena *arena, Lexer_State *state);
-AST *parse_expression(AST_Arena *arena, Lexer_State *state);
-AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state);
-AST *parse_type_declaration(AST_Arena *arena, Lexer_State *state);
+AST *parse_next_statement(AST_Arena *arena, Lexer_State *state, AST *parent);
+AST *parse_block(AST_Arena *arena, Lexer_State *state, AST *parent);
+AST *parse_expression(AST_Arena *arena, Lexer_State *state, AST *parent);
+AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state, AST *parent);
+AST *parse_type_declaration(AST_Arena *arena, Lexer_State *state, AST *parent);
 
 #endif

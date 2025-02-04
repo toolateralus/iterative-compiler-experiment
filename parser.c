@@ -2,13 +2,14 @@
 #include "lexer.h"
 
 // parse string, identifier, function call, numbers, dot expressions
-AST *parse_expression(AST_Arena *arena, Lexer_State *state) {
+AST *parse_expression(AST_Arena *arena, Lexer_State *state, AST *parent) {
   Token token = token_eat(state);
 
   switch (token.type) {
   case TOKEN_STRING: {
     AST *node = ast_arena_alloc(arena, AST_NODE_STRING);
     node->string = token.value;
+    node->parent = parent;
     return node;
   }
   case TOKEN_IDENTIFIER: {
@@ -20,9 +21,11 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state) {
       dot_node->dot_expression.left = token.value;
       dot_node->dot_expression.right =
           token_expect(state, TOKEN_IDENTIFIER).value;
+      dot_node->parent = parent;
       if (token_peek(state).type == TOKEN_ASSIGN) { // Parse dot assignment
-        token_eat(state); // Consume '='
-        dot_node->dot_expression.assignment_value = parse_expression(arena, state);
+        token_eat(state);                           // Consume '='
+        dot_node->dot_expression.assignment_value =
+            parse_expression(arena, state, dot_node);
         token_expect(state, TOKEN_SEMICOLON);
       }
       return dot_node;
@@ -31,11 +34,12 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state) {
     if (next_token.type == TOKEN_OPEN_PAREN) { // Parse function calls
       AST *call_node = ast_arena_alloc(arena, AST_NODE_FUNCTION_CALL);
       call_node->function_call.name = token.value;
+      call_node->parent = parent;
       token_eat(state); // Consume '('
       while (token_peek(state).type != TOKEN_CLOSE_PAREN) {
         call_node->function_call
             .arguments[call_node->function_call.arguments_length++] =
-            parse_expression(arena, state);
+            parse_expression(arena, state, call_node);
         if (token_peek(state).type != TOKEN_CLOSE_PAREN) {
           token_expect(state, TOKEN_COMMA);
         }
@@ -56,7 +60,8 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state) {
         var_decl_node->variable_declaration.type = type;
         var_decl_node->variable_declaration.name = name;
         var_decl_node->variable_declaration.default_value =
-            parse_expression(arena, state);
+            parse_expression(arena, state, var_decl_node);
+        var_decl_node->parent = parent;
         token_expect(state, TOKEN_SEMICOLON);
         return var_decl_node;
       } else {
@@ -64,6 +69,7 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state) {
             ast_arena_alloc(arena, AST_NODE_VARIABLE_DECLARATION);
         assignment_node->variable_declaration.type = type;
         assignment_node->variable_declaration.name = name;
+        assignment_node->parent = parent;
         token_expect(state, TOKEN_SEMICOLON);
         return assignment_node;
       }
@@ -71,11 +77,13 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state) {
 
     AST *node = ast_arena_alloc(arena, AST_NODE_IDENTIFIER);
     node->identifier = token.value;
+    node->parent = parent;
     return node;
   }
   case TOKEN_NUMBER: {
     AST *node = ast_arena_alloc(arena, AST_NODE_NUMBER);
     node->number = token.value;
+    node->parent = parent;
     return node;
   }
   default: {
@@ -85,13 +93,14 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state) {
   }
 }
 
-AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state) {
+AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state, AST *parent) {
   token_expect(state, TOKEN_FN_KEYWORD);
   String name = token_expect(state, TOKEN_IDENTIFIER).value;
   AST *node = ast_arena_alloc(arena, AST_NODE_FUNCTION_DECLARATION);
   node->function_declaration.is_entry = false;
   node->function_declaration.is_extern = false;
   node->function_declaration.name = name;
+  node->parent = parent;
   token_expect(state, TOKEN_OPEN_PAREN);
   while (token_peek(state).type != TOKEN_CLOSE_PAREN) {
     Parameter param;
@@ -134,14 +143,15 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state) {
     token_expect(state, TOKEN_SEMICOLON);
     return node;
   }
-  node->function_declaration.body = parse_block(arena, state);
+  node->function_declaration.body = parse_block(arena, state, node);
   return node;
 }
 
-AST *parse_type_declaration(AST_Arena *arena, Lexer_State *state) {
+AST *parse_type_declaration(AST_Arena *arena, Lexer_State *state, AST *parent) {
   token_expect(state, TOKEN_TYPE_KEYWORD);
   AST *node = ast_arena_alloc(arena, AST_NODE_TYPE_DECLARATION);
   String name = token_expect(state, TOKEN_IDENTIFIER).value;
+  node->parent = parent;
   token_expect(state, TOKEN_OPEN_PAREN);
   token_expect(state, TOKEN_CLOSE_PAREN);
 
@@ -161,17 +171,18 @@ AST *parse_type_declaration(AST_Arena *arena, Lexer_State *state) {
   return node;
 }
 
-AST *parse_block(AST_Arena *arena, Lexer_State *state) {
+AST *parse_block(AST_Arena *arena, Lexer_State *state, AST *parent) {
   AST *node = ast_arena_alloc(arena, AST_NODE_BLOCK);
+  node->parent = parent;
   token_expect(state, TOKEN_OPEN_CURLY);
   while (token_peek(state).type != TOKEN_CLOSE_CURLY) {
-    ast_list_push(&node->block, parse_next_statement(arena, state));
+    ast_list_push(&node->statements, parse_next_statement(arena, state, node));
   }
   token_expect(state, TOKEN_CLOSE_CURLY);
   return node;
 }
 
-AST *parse_next_statement(AST_Arena *arena, Lexer_State *state) {
+AST *parse_next_statement(AST_Arena *arena, Lexer_State *state, AST *parent) {
   Token token = token_peek(state);
 
   // Done parsing
@@ -180,14 +191,13 @@ AST *parse_next_statement(AST_Arena *arena, Lexer_State *state) {
 
   switch (token.type) {
   case TOKEN_IDENTIFIER: {
-    return parse_expression(arena, state);
+    return parse_expression(arena, state, parent);
   }
   case TOKEN_FN_KEYWORD: {
-    return parse_function_declaration(arena, state);
+    return parse_function_declaration(arena, state, parent);
   }
   case TOKEN_TYPE_KEYWORD: {
-    return parse_type_declaration(arena, state);
-    return NULL;
+    return parse_type_declaration(arena, state, parent);
   }
   default: {
     fprintf(stderr, "Unexpected token: %s\n", Token_Type_Name(token.type));

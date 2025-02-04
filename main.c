@@ -24,16 +24,16 @@ int main(int argc, char *argv[]) {
   Lexer_State state;
   lexer_state_read_file(&state, "max.it");
   AST_Arena arena = {0};
-  AST_List program = {0};
+  AST program;
 
   while (1) {
-    AST *node = parse_next_statement(&arena, &state);
+    AST *node = parse_next_statement(&arena, &state, &program);
     if (!node)
       break;
-    ast_list_push(&program, node);
+    ast_list_push(&program.statements, node);
   }
 
-  printf("parsed %ld statements\n", program.length);
+  printf("parsed %ld statements\n", program.statements.length);
 
   free_lexer_state(&state);
   return 0;
