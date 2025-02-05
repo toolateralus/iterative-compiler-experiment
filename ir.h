@@ -336,70 +336,73 @@ static void write_ir_to_file(IR_Context *ctx, const char *filename) {
     return;
   }
 
-  // Emit types
+  fprintf(file, ".section :type:\n");
   for (size_t i = 0; i < ctx->types.length; ++i) {
     IR_Type *type = &ctx->types.data[i];
-    fprintf(file, "TYPE %s\n", type->name.data);
+    fprintf(file, "  .type %s\n", type->name.data);
     for (size_t j = 0; j < type->members_length; ++j) {
-      fprintf(file, "  MEMBER %s, OFFSET %zu\n",
+      fprintf(file, "    .member %s, .offset %zu\n",
               type->members[j].type.data, type->members[j].offset);
     }
+    fprintf(file, "  .end\n");
   }
+  fprintf(file, ".end\n");
 
-  // Emit constants
+  fprintf(file, ".section :constant:\n");
   for (size_t i = 0; i < ctx->constants.length; ++i) {
     IR_Constant *constant = &ctx->constants.data[i];
     switch (constant->type) {
     case CONSTANT_NUMBER:
-      fprintf(file, "CONSTANT_NUMBER %zu, %zu\n", constant->address,
+      fprintf(file, "  .number %zu, %zu\n", constant->address,
               constant->number);
       break;
     case CONSTANT_STRING:
-      fprintf(file, "CONSTANT_STRING %zu, \"%s\"\n", constant->address,
+      fprintf(file, "  .string %zu, \"%s\"\n", constant->address,
               constant->string.data);
       break;
     }
   }
-
-  // Emit instructions
+  fprintf(file, ".end\n");
+  fprintf(file, ".section :text:\n");
   for (size_t i = 0; i < ctx->length; ++i) {
     IR *ir = &ctx->data[i];
     switch (ir->code) {
     case OP_ALLOC:
-      fprintf(file, "ALLOC %zu\n", ir->address);
+      fprintf(file, "  .alloc %zu\n", ir->address);
       break;
     case OP_ASSIGN:
-      fprintf(file, "ASSIGN %zu, %zu\n", ir->right, ir->left);
+      fprintf(file, "  .assign %zu, %zu\n", ir->right, ir->left);
       break;
     case OP_RET:
-      fprintf(file, "RET\n");
+      fprintf(file, "  .ret\n");
       break;
     case OP_SEP:
-      fprintf(file, "SEP %zu, %zu, %zu\n", ir->address, ir->left, ir->right);
+      fprintf(file, "  .sep %zu, %zu, %zu\n", ir->address, ir->left, ir->right);
       break;
     case OP_GEP:
-      fprintf(file, "GEP %zu, %zu, %zu\n", ir->address, ir->left, ir->right);
+      fprintf(file, "  .gep %zu, %zu, %zu\n", ir->address, ir->left, ir->right);
       break;
     case OP_CALL:
-      fprintf(file, "CALL %zu\n", ir->left);
+      fprintf(file, "  .call %zu\n", ir->left);
       break;
     case OP_PUSH_ARG:
-      fprintf(file, "PUSH_ARG %zu\n", ir->left);
+      fprintf(file, "  .push_arg %zu\n", ir->left);
       break;
     case OP_POP_ARG:
-      fprintf(file, "POP_ARG %zu\n", ir->left);
+      fprintf(file, "  .pop_arg %zu\n", ir->left);
       break;
     case OP_LOAD:
-      fprintf(file, "LOAD %zu, %zu\n", ir->address, ir->left);
+      fprintf(file, "  .load %zu, %zu\n", ir->address, ir->left);
       break;
     case OP_LOAD_CONSTANT:
-      fprintf(file, "LOAD_CONSTANT %zu, %zu\n", ir->address, ir->left);
+      fprintf(file, "  .load_constant %zu, %zu\n", ir->address, ir->left);
       break;
     default:
-      fprintf(file, "UNKNOWN_OP\n");
+      fprintf(file, "  UNKNOWN_OP\n");
       break;
     }
   }
+  fprintf(file, ".end\n");
 
   fclose(file);
 }
