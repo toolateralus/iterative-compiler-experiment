@@ -1,21 +1,23 @@
 fn main() @entry {
-  hello_world();
+  printf("%d\n", 2);
 }
 
-fn hello_world() {
-  Vector_3 dependent; # ALLOC
-  Vector_2 n = dependent.xy; # ASSIGN, GEP
-  dependent.z = 100; # ASSIGN, SEP
-  printf("dependent.z = '%d'\n", dependent.z);
-  printf("Hello, World!\n");
-}
 
-type Vector_3(Vector_2 xy, i32 z);
+fn printf(String, ...) @extern;
+
+##
 
 type Vector_2(i32 x, i32 y);
+Vector_3 dependent; # ALLOC
+Vector_2 n = dependent.xy;
+dependent.z = 100; # ASSIGN, SEP
+printf("dependent.z = '%d'\n", dependent.z);
+printf("Hello, World!\n");
+
+type Vector_3(Vector_2 xy, i32 z);
 
 type Matrix_4x4(Vector_4 a, Vector_4 b, Vector_4 c, Vector_4 d);
 
 type Vector_4(i32 x, i32 y, i32 z, i32 w);
 
-fn printf(String, ...) @extern;
+##

@@ -1,10 +1,11 @@
 #include "emit.h"
-#include <stdio.h>
 #include "ir.h"
 #include "parser.h"
 #include "typer.h"
+#include <stdio.h>
 #include <time.h>
 
+size_t address = 0;
 Type type_table[1024] = {0};
 size_t type_table_length = 0;
 
@@ -67,7 +68,6 @@ void parse_program(Lexer_State *state, AST_Arena *arena, AST *program) {
   }
 }
 
-
 void *popen(char *, char *);
 int pclose(void *);
 
@@ -84,7 +84,7 @@ int main(int argc, char *argv[]) {
   // Typing phase
   TIME_REGION("completed type checking", { type_check_program(program); });
 
-  #define execute_as_c_code false
+#define execute_as_c_code false
   if (execute_as_c_code) {
     // Emitting phase
     String_Builder builder;
@@ -119,19 +119,37 @@ int main(int argc, char *argv[]) {
 
     for (int i = 0; i < program.statements.length; ++i) {
       AST *statement = program.statements.data[i];
-      if (statement->kind == AST_NODE_FUNCTION_DECLARATION && statement->function_declaration.is_entry) {
+      if (statement->kind == AST_NODE_FUNCTION_DECLARATION &&
+          statement->function_declaration.is_entry) {
         entry_point = statement;
         break;
       }
     }
 
     if (!entry_point) {
-      panic("Unable to find entry point. Be sure to mark one of your functions with `fn ...() @entry { ... }` the `@entry` @tribute :D");
+      panic("Unable to find entry point. Be sure to mark one of your functions "
+            "with `fn ...() @entry { ... }` the `@entry` @tribute :D");
     }
-
-    generate_ir(&context, &program);
+    for (int i = 0; i < program.statements.length; ++i) {
+      auto node = program.statements.data[i];
+      if (node->kind == AST_NODE_FUNCTION_DECLARATION &&
+          node->function_declaration.is_extern) {
+        auto address = get_address_then_advance();
+        ir_extern_push(
+            &context, (IR_Extern){
+                        .name = node->function_declaration.name,
+                        .parameters = (node->function_declaration.parameters),
+                        .parameters_length = node->function_declaration.parameters_length,
+                        .address = address,
+                      });
+        Symbol *symbol = find_symbol(node->parent, node->function_declaration.name);
+        symbol->address = address;
+      }
+    }
+    for (int i = 0; i < program.statements.length; ++i) {
+      emit_ir(&context, program.statements.data[i]);
+    }
     printf("generated %ld instructions\n", context.length);
-
 
     write_ir_to_file(&context, "generated/output.ir");
   }

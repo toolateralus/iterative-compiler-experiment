@@ -82,7 +82,7 @@ Typer_Progress typer_type_declaration(AST *node) {
     insert_symbol(node, node->type_declaration.members[i].name, node,
                   member_type);
   }
-  Type *type = create_type(node, node->type_declaration.name, STRUCT);
+  Type *type = create_type(node, node->type_declaration.name, STRUCT, 0);
 
   for (size_t i = 0; i < node->type_declaration.members_length; ++i) {
     Type *member_type = find_type(node->type_declaration.members[i].type);
@@ -91,6 +91,8 @@ Typer_Progress typer_type_declaration(AST *node) {
     type->members_length++;
   }
 
+  type->size = calculate_sizeof_type(type);
+  
   node->type = &type_table[VOID];
   node->typing_complete = true;
   return COMPLETE;

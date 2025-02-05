@@ -41,12 +41,13 @@ static size_t get_alignment(Type_Kind kind) {
   }
 }
 
-static Type *create_type(AST *declaring_node, String name, Type_Kind kind) {
+static Type *create_type(AST *declaring_node, String name, Type_Kind kind, size_t size) {
   type_table[type_table_length] = (Type){
       .name = name,
       .declaring_node = declaring_node,
       .alignment = get_alignment(kind),
       .kind = kind,
+      .size = size,
   };
   Type *type = &type_table[type_table_length];
   type_table_length++;
@@ -55,16 +56,16 @@ static Type *create_type(AST *declaring_node, String name, Type_Kind kind) {
 
 
 
-static size_t calculate_sizeof_type(Type *type) {
-  if (type->members_length == 0 || type->size != 0) {
+static int64_t calculate_sizeof_type(Type *type) {
+  if (type->members_length == 0) {
     return type->size;
   }
-  size_t size = 0;
-  size_t max_alignment = 1;
+  int64_t size = 0;
+  int64_t max_alignment = 1;
   for (int i = 0; i < type->members_length; ++i) {
     Type *member_type = type->members[i].type;
-    size_t member_size = calculate_sizeof_type(member_type);
-    size_t alignment = member_type->alignment;
+    int64_t member_size = calculate_sizeof_type(member_type);
+    int64_t alignment = member_type->alignment;
 
     // Update max alignment
     if (alignment > max_alignment) {
@@ -91,9 +92,11 @@ static int64_t calculate_member_offset(Type *type, String member) {
     if (Strings_compare(type->members[i].name, member)) {
       return offset;
     }
-    offset += calculate_sizeof_type(type->members[i].type);
+    int64_t alignment = type->members[i].type->alignment;
+    offset = (offset + alignment - 1) & ~(alignment - 1);
+    auto size = calculate_sizeof_type(type->members[i].type);
+    offset += size;
   }
-  printf("couldn't calculate member offset for type %s . %s\n", type->name.data, member.data);
   return -1;
 }
 
@@ -116,9 +119,9 @@ static Type_Member *find_member(Type *type, String name) {
 }
 
 static void initialize_type_system() {
-  create_type(nullptr, (String){.data = "void", .length = 4}, VOID);
-  create_type(nullptr, (String){.data = "i32", .length = 3}, I32);
-  create_type(nullptr, (String){.data = "String", .length = 6}, STRING);
+  create_type(nullptr, (String){.data = "void", .length = 4}, VOID, 0);
+  create_type(nullptr, (String){.data = "i32", .length = 3}, I32, 4);
+  create_type(nullptr, (String){.data = "String", .length = 6}, STRING, 8);
 }
 
 #endif

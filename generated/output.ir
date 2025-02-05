@@ -1,47 +1,25 @@
 .section :type:
-  .type Vector_3
-    .member Vector_2, .offset 18446744073709551615
-    .member i32, .offset 18446744073709551615
-  .end
-  .type Vector_2
-    .member i32, .offset 18446744073709551615
-    .member i32, .offset 18446744073709551615
-  .end
-  .type Matrix_4x4
-    .member Vector_4, .offset 18446744073709551615
-    .member Vector_4, .offset 18446744073709551615
-    .member Vector_4, .offset 18446744073709551615
-    .member Vector_4, .offset 18446744073709551615
-  .end
-  .type Vector_4
-    .member i32, .offset 18446744073709551615
-    .member i32, .offset 18446744073709551615
-    .member i32, .offset 18446744073709551615
-    .member i32, .offset 18446744073709551615
-  .end
-.end
+.end section
+
 .section :constant:
-  .number 0, 100
-  .string 1, "dependent.z = '%d'\n"
-  .string 2, "Hello, World!\n"
-.end
+  .string @0, $"%d\n"
+  .number @1, $2
+.end section
+
+.section :extern:
+  .function printf @0
+    .parameters (String, ...)
+  .end function
+.end section
+
 .section :text:
-  .gep 0, 0, 0
-  .assign 0, 0
-  .load_constant 2, 0
-  .sep 3, 2, 0
-  .load_constant 4, 1
-  .push_arg 0
-  .gep 6, 0, 0
-  .push_arg 0
-  .call 0
-  .pop_arg 0
-  .pop_arg 0
-  .load_constant 11, 2
-  .push_arg 0
-  .call 0
-  .pop_arg 0
-  .ret
-  .call 0
-  .ret
-.end
+  .begin @1
+    .load_constant @4, %0
+    .push_arg %4
+    .load_constant @5, %1
+    .push_arg %5
+    .call %0
+    .ret
+  .end @1
+.end section
+
