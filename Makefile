@@ -1,6 +1,6 @@
 PRJ_NAME := iterative
 COMPILER := clang
-COMPILER_FLAGS := -std=c23 -O3
+COMPILER_FLAGS := -std=c23 -g
 BIN_DIR := bin
 SRCS := $(wildcard *.c)
 

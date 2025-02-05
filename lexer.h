@@ -1,11 +1,7 @@
 #ifndef LEX_H
 #define LEX_H
 #include "core.h"
-#include <assert.h>
 #include <ctype.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 typedef enum {
   TOKEN_EOF_OR_INVALID,
@@ -225,36 +221,34 @@ static Token get_token(Lexer_State *state) {
   }
 }
 
-static void lexer_state_populate_lookahead_buffer(Lexer_State *state) {
+static inline void lexer_state_populate_lookahead_buffer(Lexer_State *state) {
   while (state->lookahead_length < 8) {
     state->lookahead[state->lookahead_length++] = get_token(state);
   }
 }
 
-static Token token_peek(Lexer_State *state) {
-  lexer_state_populate_lookahead_buffer(state);
+static inline Token token_peek(Lexer_State *state) {
   return state->lookahead[0];
 }
 
-static Token token_eat(Lexer_State *state) {
-  lexer_state_populate_lookahead_buffer(state);
+static inline Token token_eat(Lexer_State *state) {
   Token token = state->lookahead[0];
   for (int i = 1; i < state->lookahead_length; ++i) {
     state->lookahead[i - 1] = state->lookahead[i];
   }
   state->lookahead_length--;
+  lexer_state_populate_lookahead_buffer(state);
   return token;
 }
 
-static Token token_lookahead(Lexer_State *state, int n) {
-  lexer_state_populate_lookahead_buffer(state);
+static inline Token token_lookahead(Lexer_State *state, int n) {
   if (n >= state->lookahead_length) {
     panic("lookahead out of bounds");
   }
   return state->lookahead[n];
 }
 
-static Token token_expect(Lexer_State *state, Token_Type type) {
+static inline Token token_expect(Lexer_State *state, Token_Type type) {
   Token token = token_peek(state);
   if (token.type != type) {
     fprintf(stderr, "Error: expected %s, but got %s\n", Token_Type_Name(type),

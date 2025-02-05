@@ -2,10 +2,12 @@
 #include "core.h"
 #include "parser.h"
 #include "type.h"
+#include <assert.h>
 
 Typer_Progress typer_identifier(AST *node) {
   if (node->typing_complete)
     return COMPLETE;
+
   auto symbol = find_symbol(node->parent, node->identifier);
   if (!symbol) {
     return UNRESOLVED;
@@ -19,11 +21,7 @@ Typer_Progress typer_identifier(AST *node) {
 Typer_Progress typer_number(AST *node) {
   if (node->typing_complete)
     return COMPLETE;
-  const static String string = {
-      .data = "i32",
-      .length = 3,
-  };
-  node->type = find_type(string);
+  node->type = &type_table[I32];
   node->typing_complete = true;
   return COMPLETE;
 }
@@ -31,11 +29,7 @@ Typer_Progress typer_number(AST *node) {
 Typer_Progress typer_string(AST *node) {
   if (node->typing_complete)
     return COMPLETE;
-  const static String string = {
-      .data = "String",
-      .length = 6,
-  };
-  node->type = find_type(string);
+  node->type = &type_table[STRING];
   node->typing_complete = true;
   return COMPLETE;
 }
@@ -71,7 +65,7 @@ Typer_Progress typer_function_declaration(AST *node) {
   }
 
   insert_symbol(node->parent, node->function_declaration.name, node, nullptr);
-  node->type = find_type((String){.data = "void", .length = 4});
+  node->type = &type_table[VOID];
   node->typing_complete = true;
   return COMPLETE;
 }
@@ -88,7 +82,7 @@ Typer_Progress typer_type_declaration(AST *node) {
     insert_symbol(node, node->type_declaration.members[i].name, node,
                   member_type);
   }
-  Type *type = create_type(node, node->type_declaration.name);
+  Type *type = create_type(node, node->type_declaration.name, STRUCT);
 
   for (size_t i = 0; i < node->type_declaration.members_length; ++i) {
     Type *member_type = find_type(node->type_declaration.members[i].type);
@@ -97,7 +91,7 @@ Typer_Progress typer_type_declaration(AST *node) {
     type->members_length++;
   }
 
-  node->type = find_type((String){.data = "void", .length = 4});
+  node->type = &type_table[VOID];
   node->typing_complete = true;
   return COMPLETE;
 }
@@ -124,7 +118,7 @@ Typer_Progress typer_variable_declaration(AST *node) {
 
   insert_symbol(node->parent, decl->name, node, type);
 
-  node->type = find_type((String){.data = "void", .length = 4});
+  node->type = &type_table[VOID];
   node->typing_complete = true;
   return COMPLETE;
 }
@@ -201,7 +195,7 @@ Typer_Progress typer_function_call(AST *node) {
       return UNRESOLVED;
   }
 
-  node->type = find_type((String){.data = "void", .length = 4});
+  node->type = &type_table[VOID];
   node->typing_complete = true;
   return COMPLETE;
 }

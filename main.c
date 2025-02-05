@@ -1,45 +1,9 @@
 #include "emit.h"
-#include "lexer.h"
-#include "parser.h"
-#include "string_builder.h"
-#include "type.h"
-#include "typer.h"
 #include <stdio.h>
-#include <stdlib.h>
+#include "ir.h"
+#include "parser.h"
+#include "typer.h"
 #include <time.h>
-
-
-#define PRINT_COLOR "\033[1;33m"
-#define RESET_COLOR "\033[0m"
-#define RUN_COLOR "\033[1;32m"
-#define TIME_COLOR "\033[1;34m"
-
-#define TIME_DIFF(start, end) ((double)(end - start) / CLOCKS_PER_SEC)
-
-#define PRINT_TIME(label, time_sec)                                            \
-  do {                                                                         \
-    if (time_sec < 1e-6)                                                       \
-      printf("%s%s in %s%.2f ns%s\n", PRINT_COLOR, label, TIME_COLOR,          \
-             time_sec * 1e9, RESET_COLOR);                                     \
-    else if (time_sec < 1e-3)                                                  \
-      printf("%s%s in %s%.2f µs%s\n", PRINT_COLOR, label, TIME_COLOR,          \
-             time_sec * 1e6, RESET_COLOR);                                     \
-    else if (time_sec < 1)                                                     \
-      printf("%s%s in %s%.2f ms%s\n", PRINT_COLOR, label, TIME_COLOR,          \
-             time_sec * 1e3, RESET_COLOR);                                     \
-    else                                                                       \
-      printf("%s%s in %s%.2f s%s\n", PRINT_COLOR, label, TIME_COLOR, time_sec, \
-             RESET_COLOR);                                                     \
-  } while (0)
-
-#define TIME_REGION(label, code)                                               \
-  do {                                                                         \
-    clock_t start = clock();                                                   \
-    code clock_t end = clock();                                                \
-    double time_sec = TIME_DIFF(start, end);                                   \
-    PRINT_TIME(label, time_sec);                                               \
-  } while (0)
-
 
 Type type_table[1024] = {0};
 size_t type_table_length = 0;
@@ -94,6 +58,7 @@ void type_check_program(AST program) {
 }
 
 void parse_program(Lexer_State *state, AST_Arena *arena, AST *program) {
+  lexer_state_populate_lookahead_buffer(state);
   while (1) {
     AST *node = parse_next_statement(arena, state, program);
     if (!node)
@@ -102,10 +67,9 @@ void parse_program(Lexer_State *state, AST_Arena *arena, AST *program) {
   }
 }
 
-#include <stdio.h>
 
-void *popen(char*, char*);
-int pclose(void*);
+void *popen(char *, char *);
+int pclose(void *);
 
 int main(int argc, char *argv[]) {
   Lexer_State state;
@@ -120,33 +84,54 @@ int main(int argc, char *argv[]) {
   // Typing phase
   TIME_REGION("completed type checking", { type_check_program(program); });
 
-  // Emitting phase
-  String_Builder builder;
-  char* c_code;
-  TIME_REGION("emitted program", {
-    string_builder_init(&builder);
-    emit_program(program, &builder);
-    c_code = string_builder_get_string(&builder);
-    string_builder_free(&builder);
-  });
+  #define execute_as_c_code false
+  if (execute_as_c_code) {
+    // Emitting phase
+    String_Builder builder;
+    char *c_code;
+    TIME_REGION("emitted program", {
+      string_builder_init(&builder);
+      emit_program(program, &builder);
+      c_code = string_builder_get_string(&builder);
+      string_builder_free(&builder);
+    });
 
-  // Compiling phase
-  TIME_REGION("write file, compile c code.", {
-    FILE *clang = popen("clang -std=c23 -w -x c - -o generated/output", "w");
-    if (clang == NULL) {
-      perror("popen");
-      exit(EXIT_FAILURE);
-    }
-    fprintf(clang, "%s", c_code);
-    if (pclose(clang) == -1) {
-      perror("pclose");
-      exit(EXIT_FAILURE);
-    }
-  });
+    // Compiling phase
+    TIME_REGION("write file, compile c code.", {
+      FILE *clang = popen("clang -std=c23 -w -x c - -o generated/output", "w");
+      if (clang == NULL) {
+        perror("popen");
+        exit(EXIT_FAILURE);
+      }
+      fprintf(clang, "%s", c_code);
+      if (pclose(clang) == -1) {
+        perror("pclose");
+        exit(EXIT_FAILURE);
+      }
+    });
 
-  printf("%srunning './generated/output' binary...%s\n", RUN_COLOR,
-         RESET_COLOR);
-  TIME_REGION("executed program", { system("./generated/output"); });
+    printf("%srunning './generated/output' binary...%s\n", RUN_COLOR,
+           RESET_COLOR);
+    TIME_REGION("executed program", { system("./generated/output"); });
+  } else {
+    IR_Context context;
+    AST *entry_point = nullptr;
+
+    for (int i = 0; i < program.statements.length; ++i) {
+      AST *statement = program.statements.data[i];
+      if (statement->kind == AST_NODE_FUNCTION_DECLARATION && statement->function_declaration.is_entry) {
+        entry_point = statement;
+        break;
+      }
+    }
+
+    if (!entry_point) {
+      panic("Unable to find entry point. Be sure to mark one of your functions with `fn ...() @entry { ... }` the `@entry` @tribute :D");
+    }
+
+    generate_ir(&context, entry_point);
+    printf("generated %ld instructions\n", context.length);
+  }
 
   free_lexer_state(&state);
   return 0;

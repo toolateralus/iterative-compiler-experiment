@@ -2,7 +2,7 @@
 #define TYPE_H
 
 #include "core.h"
-#include <string.h>
+#include <stdint.h>
 
 typedef struct Type Type;
 
@@ -24,19 +24,76 @@ typedef struct Type {
   String name;
   Type_Member members[12];
   size_t members_length;
+  size_t size;
+  size_t alignment;
 } Type;
 
 extern Type type_table[1024];
 extern size_t type_table_length;
 
-static Type *create_type(AST *declaring_node, String name) {
-  type_table[type_table_length] = (Type) {
-    .name = name,
-    .declaring_node = declaring_node,
+static size_t get_alignment(Type_Kind kind) {
+  switch (kind) {
+    case VOID: return 1;
+    case I32: return 4;
+    case STRING: return sizeof(void*); // Assuming pointers for strings
+    case STRUCT: return 1; // Default, will be updated based on members
+    default: return 1;
+  }
+}
+
+static Type *create_type(AST *declaring_node, String name, Type_Kind kind) {
+  type_table[type_table_length] = (Type){
+      .name = name,
+      .declaring_node = declaring_node,
+      .alignment = get_alignment(kind),
+      .kind = kind,
   };
   Type *type = &type_table[type_table_length];
   type_table_length++;
   return type;
+}
+
+
+
+static size_t calculate_sizeof_type(Type *type) {
+  if (type->members_length == 0 || type->size != 0) {
+    return type->size;
+  }
+  size_t size = 0;
+  size_t max_alignment = 1;
+  for (int i = 0; i < type->members_length; ++i) {
+    Type *member_type = type->members[i].type;
+    size_t member_size = calculate_sizeof_type(member_type);
+    size_t alignment = member_type->alignment;
+
+    // Update max alignment
+    if (alignment > max_alignment) {
+      max_alignment = alignment;
+    }
+
+    // Add padding to align the member
+    size = (size + alignment - 1) & ~(alignment - 1);
+
+    // Add the member size
+    size += member_size;
+  }
+
+  // Add padding to align the total size to the max alignment
+  size = (size + max_alignment - 1) & ~(max_alignment - 1);
+
+  type->size = size;
+  return size;
+}
+
+static int64_t calculate_member_offset(Type *type, String member) {
+  int64_t offset = 0;
+  for (int i = 0; i < type->members_length; ++i) {
+    if (Strings_compare(type->members[i].name, member)) {
+      return offset;
+    }
+    offset += calculate_sizeof_type(type->members[i].type);
+  }
+  return -1;
 }
 
 static Type *find_type(String name) {
@@ -58,28 +115,9 @@ static Type_Member *find_member(Type *type, String name) {
 }
 
 static void initialize_type_system() {
-  type_table[0] = (Type) {
-    .name = (String) { 
-      .data = "void",
-      .length = 4
-    },
-    .kind = VOID,
-  };
-  type_table[1] = (Type) {
-    .name = (String) { 
-      .data = "i32",
-      .length = 3
-    },
-    .kind = I32,
-  };
-  type_table[2] = (Type) {
-    .name = (String) { 
-      .data = "String",
-      .length = 6
-    },
-    .kind = STRING,
-  };
-  type_table_length = 3;
+  create_type(nullptr, (String){.data = "void", .length = 4}, VOID);
+  create_type(nullptr, (String){.data = "i32", .length = 3}, I32);
+  create_type(nullptr, (String){.data = "String", .length = 6}, STRING);
 }
 
 #endif
