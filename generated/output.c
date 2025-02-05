@@ -9,9 +9,14 @@ typedef struct Vector_3 {
 	i32 z;
 } Vector_3;
 extern void printf(String,... );
-int main()
+void hello_world()
 {
 	Vector_3 dependent;
 	dependent.z = 100;
-	printf("%d\n", dependent.z);
+	printf("dependent.z = '%d'\n", dependent.z);
+	printf("Hello, World!\n");
+}
+int main()
+{
+	hello_world();
 }

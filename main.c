@@ -75,13 +75,13 @@ int main(int argc, char *argv[]) {
   }
 
 
-  FILE *file = fopen("output.c", "w");
+  FILE *file = fopen("generated/output.c", "w");
   char *c_code = string_builder_get_string(&builder);
   int length = strlen(c_code);
   fwrite(c_code, sizeof(char), length, file);
   fclose(file);
 
-  system("clang -std=c23 -w -g output.c -o output && ./output");
+  system("clang -std=c23 -w -g generated/output.c -o generated/output && ./generated/output");
 
   free_lexer_state(&state);
   return 0;
