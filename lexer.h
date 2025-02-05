@@ -109,7 +109,13 @@ static void lexer_state_read_file(Lexer_State *state, const char *filename) {
   memset(state->lookahead, 0, sizeof(state->lookahead));
 }
 
-static char lexer_state_get_character(Lexer_State *state) {
+static char lexer_state_peek_char(Lexer_State *state) {
+  if (state->position >= state->length) {
+    return EOF;
+  }
+  return state->content[state->position];
+}
+static char lexer_state_eat_char(Lexer_State *state) {
   if (state->position >= state->length) {
     return EOF;
   }
@@ -130,8 +136,8 @@ typedef struct Keyword {
 } Keyword;
 
 static Keyword keyword_map[] = {
-  {"fn", TOKEN_FN_KEYWORD},
-  {"type", TOKEN_TYPE_KEYWORD},
+    {"fn", TOKEN_FN_KEYWORD},
+    {"type", TOKEN_TYPE_KEYWORD},
 };
 
 static Token get_token(Lexer_State *state) {
@@ -140,9 +146,29 @@ static Token get_token(Lexer_State *state) {
   token.value = String_new(nullptr, 0);
 
   while (1) {
-    char c = lexer_state_get_character(state);
+    char c = lexer_state_eat_char(state);
     if (c == EOF) {
       return token;
+    }
+
+    // Multi-line comments
+    // Delimited by ## and ##
+    if (c == '#' && lexer_state_peek_char(state) == '#') {
+      while (1) {
+        c = lexer_state_eat_char(state);
+        if (c == '#' && lexer_state_peek_char(state) == '#') {
+          lexer_state_eat_char(state);
+          break;
+        }
+      }
+      continue;
+    }
+
+    if (c == '#') {
+      c = lexer_state_eat_char(state);
+      while ((c = lexer_state_eat_char(state)) != '\n')
+        ;
+      continue;
     }
 
     if (c == ' ' || c == '\n' || c == '\t') {
@@ -153,7 +179,7 @@ static Token get_token(Lexer_State *state) {
       token.type = TOKEN_STRING;
       char *start = &state->content[state->position];
       size_t length = 0;
-      while ((c = lexer_state_get_character(state)) != '"' && c != EOF) {
+      while ((c = lexer_state_eat_char(state)) != '"' && c != EOF) {
         length++;
       }
       if (c == EOF) {
@@ -167,7 +193,7 @@ static Token get_token(Lexer_State *state) {
       token.type = TOKEN_IDENTIFIER;
       char *start = &state->content[state->position - 1];
       size_t length = 1;
-      while (isalnum(c = lexer_state_get_character(state)) || c == '_') {
+      while (isalnum(c = lexer_state_eat_char(state)) || c == '_') {
         length++;
       }
       state->position--; // Unread the last character
@@ -183,7 +209,7 @@ static Token get_token(Lexer_State *state) {
       token.type = TOKEN_NUMBER;
       char *start = &state->content[state->position - 1];
       size_t length = 1;
-      while (isdigit(c = lexer_state_get_character(state))) {
+      while (isdigit(c = lexer_state_eat_char(state))) {
         length++;
       }
       state->position--; // Unread the last character

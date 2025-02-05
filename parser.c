@@ -93,7 +93,8 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state, AST *parent) {
   }
 }
 
-AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state, AST *parent) {
+AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state,
+                                AST *parent) {
   token_expect(state, TOKEN_FN_KEYWORD);
   String name = token_expect(state, TOKEN_IDENTIFIER).value;
   AST *node = ast_arena_alloc(arena, AST_NODE_FUNCTION_DECLARATION);
@@ -113,12 +114,14 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state, AST *paren
       param.is_varargs = true;
     } else {
       param.type = token_expect(state, TOKEN_IDENTIFIER).value;
-      if (token_peek(state).type != TOKEN_COMMA && token_peek(state).type != TOKEN_CLOSE_PAREN) {
+      if (token_peek(state).type != TOKEN_COMMA &&
+          token_peek(state).type != TOKEN_CLOSE_PAREN) {
         param.name = token_expect(state, TOKEN_IDENTIFIER).value;
       }
     }
 
-    node->function_declaration.parameters[node->function_declaration.parameters_length++] = param;
+    node->function_declaration
+        .parameters[node->function_declaration.parameters_length++] = param;
 
     if (token_peek(state).type != TOKEN_CLOSE_PAREN) {
       token_expect(state, TOKEN_COMMA);
@@ -152,21 +155,20 @@ AST *parse_type_declaration(AST_Arena *arena, Lexer_State *state, AST *parent) {
   String name = token_expect(state, TOKEN_IDENTIFIER).value;
   node->parent = parent;
   token_expect(state, TOKEN_OPEN_PAREN);
-  token_expect(state, TOKEN_CLOSE_PAREN);
 
-  token_expect(state, TOKEN_OPEN_CURLY);
   node->type_declaration.name = name;
-  while (token_peek(state).type != TOKEN_CLOSE_CURLY) {
+  while (token_peek(state).type != TOKEN_CLOSE_PAREN) {
     AST_Type_Member member;
     member.type = token_expect(state, TOKEN_IDENTIFIER).value;
     member.name = token_expect(state, TOKEN_IDENTIFIER).value;
     node->type_declaration.members[node->type_declaration.members_length++] =
         member;
-    if (token_peek(state).type != TOKEN_CLOSE_CURLY) {
+    if (token_peek(state).type != TOKEN_CLOSE_PAREN) {
       token_expect(state, TOKEN_COMMA);
     }
   }
-  token_expect(state, TOKEN_CLOSE_CURLY);
+  token_expect(state, TOKEN_CLOSE_PAREN);
+  token_expect(state, TOKEN_SEMICOLON);
   return node;
 }
 

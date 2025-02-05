@@ -32,7 +32,7 @@ void emit_function_declaration(String_Builder *builder, AST *node) {
     const auto param = decl.parameters[i];
     const char separator = (i == (decl.parameters_length - 1) ? ' ' : ',');
     if (param.is_varargs) {
-      string_builder_appendf(builder, "...%c", separator);
+      string_builder_appendf(builder, " ...%c", separator);
       continue;
     }
     
@@ -48,7 +48,7 @@ void emit_function_declaration(String_Builder *builder, AST *node) {
     return;
   }
 
-  string_builder_appendf(builder, ")\n");
+  string_builder_appendf(builder, ") ");
   emit_block(builder, decl.block);
 }
 

@@ -1,14 +1,15 @@
 #include "typer.h"
+#include "core.h"
 #include "parser.h"
 #include "type.h"
 
 Typer_Progress typer_identifier(AST *node) {
-  if (node->typing_complete) return COMPLETE;
+  if (node->typing_complete)
+    return COMPLETE;
   auto symbol = find_symbol(node->parent, node->identifier);
   if (!symbol) {
     return UNRESOLVED;
-  }
-  else {
+  } else {
     node->typing_complete = true;
     node->type = symbol->type;
     return COMPLETE;
@@ -16,7 +17,8 @@ Typer_Progress typer_identifier(AST *node) {
 }
 
 Typer_Progress typer_number(AST *node) {
-  if (node->typing_complete) return COMPLETE;
+  if (node->typing_complete)
+    return COMPLETE;
   const static String string = {
       .data = "i32",
       .length = 3,
@@ -27,7 +29,8 @@ Typer_Progress typer_number(AST *node) {
 }
 
 Typer_Progress typer_string(AST *node) {
-  if (node->typing_complete) return COMPLETE;
+  if (node->typing_complete)
+    return COMPLETE;
   const static String string = {
       .data = "String",
       .length = 6,
@@ -38,7 +41,8 @@ Typer_Progress typer_string(AST *node) {
 }
 
 Typer_Progress typer_function_declaration(AST *node) {
-  if (node->typing_complete) return COMPLETE;
+  if (node->typing_complete)
+    return COMPLETE;
 
   // Resolve parameter types
   for (size_t i = 0; i < node->function_declaration.parameters_length; ++i) {
@@ -48,30 +52,34 @@ Typer_Progress typer_function_declaration(AST *node) {
     }
 
     Type *param_type = find_type(parameter->type);
-    
+
     if (!param_type)
       return UNRESOLVED;
 
-    if (node->function_declaration.is_extern) continue;
+    if (node->function_declaration.is_extern)
+      continue;
 
-    insert_symbol(node, parameter->name, node,
-                  param_type);
+    insert_symbol(node, parameter->name, node, param_type);
   }
 
   if (!node->function_declaration.is_extern) {
     // Resolve the function body
-    Typer_Progress body_progress = typer_resolve(node->function_declaration.block);
+    Typer_Progress body_progress =
+        typer_resolve(node->function_declaration.block);
     if (body_progress != COMPLETE)
       return UNRESOLVED;
   }
 
   insert_symbol(node->parent, node->function_declaration.name, node, nullptr);
+  node->type = find_type((String){.data = "void", .length = 4});
   node->typing_complete = true;
   return COMPLETE;
 }
 
 Typer_Progress typer_type_declaration(AST *node) {
-  if (node->typing_complete) return COMPLETE;
+  if (node->typing_complete)
+    return COMPLETE;
+
   // Resolve member types
   for (size_t i = 0; i < node->type_declaration.members_length; ++i) {
     Type *member_type = find_type(node->type_declaration.members[i].type);
@@ -88,12 +96,16 @@ Typer_Progress typer_type_declaration(AST *node) {
     type->members[i].type = member_type;
     type->members_length++;
   }
+
+  node->type = find_type((String){.data = "void", .length = 4});
   node->typing_complete = true;
   return COMPLETE;
 }
 
 Typer_Progress typer_variable_declaration(AST *node) {
-  if (node->typing_complete) return COMPLETE;
+  if (node->typing_complete)
+    return COMPLETE;
+
   typeof(node->variable_declaration) *decl = &node->variable_declaration;
 
   Typer_Progress value_progress = COMPLETE;
@@ -112,13 +124,15 @@ Typer_Progress typer_variable_declaration(AST *node) {
 
   insert_symbol(node->parent, decl->name, node, type);
 
-  node->type = type;
+  node->type = find_type((String){.data = "void", .length = 4});
   node->typing_complete = true;
   return COMPLETE;
 }
 
 Typer_Progress typer_assignment(AST *node) {
-  if (node->typing_complete) return COMPLETE;
+  if (node->typing_complete)
+    return COMPLETE;
+
   Typer_Progress value_progress = typer_resolve(node->assignment.right);
   if (value_progress != COMPLETE)
     return UNRESOLVED;
@@ -131,37 +145,52 @@ Typer_Progress typer_assignment(AST *node) {
     fprintf(stderr, "invalid types in assignment\n");
     exit(1);
   }
-
+  node->type = symbol->type;
   node->typing_complete = true;
   return COMPLETE;
 }
 
 Typer_Progress typer_dot_expression(AST *node) {
-  if (node->typing_complete) return COMPLETE;
+  if (node->typing_complete)
+    return COMPLETE;
+
   Symbol *left_symbol = find_symbol(node->parent, node->dot_expression.left);
+
   if (!left_symbol)
     return UNRESOLVED;
 
   Type *left_type = left_symbol->type;
-  if (!left_type || !find_member(left_type, node->dot_expression.right))
+  if (!left_type)
     return UNRESOLVED;
 
-  node->type = find_member(left_type, node->dot_expression.right)->type;
+  Type_Member *member = find_member(left_type, node->dot_expression.right);
 
-  if (node->dot_expression.assignment_value) {
-    Typer_Progress progress = typer_resolve(node->dot_expression.assignment_value);
-    if (progress != COMPLETE) {
-      return UNRESOLVED;
-    } 
+  if (!member) {
+    fprintf(stderr, "cannot find member %s in type %s\n",
+            node->dot_expression.right.data, left_symbol->type->name.data);
+    exit(1);
   }
 
+  if (node->dot_expression.assignment_value) {
+    Typer_Progress progress =
+        typer_resolve(node->dot_expression.assignment_value);
+    if (progress != COMPLETE) {
+      return UNRESOLVED;
+    }
+  }
+
+  node->type = member->type;
   node->typing_complete = true;
+
   return COMPLETE;
 }
 
 Typer_Progress typer_function_call(AST *node) {
-  if (node->typing_complete) return COMPLETE;
+  if (node->typing_complete)
+    return COMPLETE;
+
   Symbol *symbol = find_symbol(node->parent, node->function_call.name);
+
   if (!symbol)
     return UNRESOLVED;
 
@@ -171,12 +200,15 @@ Typer_Progress typer_function_call(AST *node) {
     if (arg_progress != COMPLETE)
       return UNRESOLVED;
   }
+
+  node->type = find_type((String){.data = "void", .length = 4});
   node->typing_complete = true;
   return COMPLETE;
 }
 
 Typer_Progress typer_block(AST *node) {
-  if (node->typing_complete) return COMPLETE;
+  if (node->typing_complete)
+    return COMPLETE;
   // Resolve each statement in the block
   for (size_t i = 0; i < node->statements.length; ++i) {
     Typer_Progress stmt_progress = typer_resolve(node->statements.data[i]);

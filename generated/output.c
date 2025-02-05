@@ -8,15 +8,13 @@ typedef struct Vector_3 {
 	Vector_2 xy;
 	i32 z;
 } Vector_3;
-extern void printf(String,... );
-void hello_world()
-{
+extern void printf(String, ... );
+void hello_world() {
 	Vector_3 dependent;
-	dependent.z = 100;
+	Vector_2 n = dependent.xy;
 	printf("dependent.z = '%d'\n", dependent.z);
 	printf("Hello, World!\n");
 }
-int main()
-{
+int main() {
 	hello_world();
 }
