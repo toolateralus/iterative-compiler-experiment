@@ -1,13 +1,45 @@
 #include "emit.h"
 #include "lexer.h"
 #include "parser.h"
-#include "type.h"
 #include "string_builder.h"
+#include "type.h"
 #include "typer.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <time.h>
+
+
+#define PRINT_COLOR "\033[1;33m"
+#define RESET_COLOR "\033[0m"
+#define RUN_COLOR "\033[1;32m"
+#define TIME_COLOR "\033[1;34m"
+
+#define TIME_DIFF(start, end) ((double)(end - start) / CLOCKS_PER_SEC)
+
+#define PRINT_TIME(label, time_sec)                                            \
+  do {                                                                         \
+    if (time_sec < 1e-6)                                                       \
+      printf("%s%s in %s%.2f ns%s\n", PRINT_COLOR, label, TIME_COLOR,          \
+             time_sec * 1e9, RESET_COLOR);                                     \
+    else if (time_sec < 1e-3)                                                  \
+      printf("%s%s in %s%.2f µs%s\n", PRINT_COLOR, label, TIME_COLOR,          \
+             time_sec * 1e6, RESET_COLOR);                                     \
+    else if (time_sec < 1)                                                     \
+      printf("%s%s in %s%.2f ms%s\n", PRINT_COLOR, label, TIME_COLOR,          \
+             time_sec * 1e3, RESET_COLOR);                                     \
+    else                                                                       \
+      printf("%s%s in %s%.2f s%s\n", PRINT_COLOR, label, TIME_COLOR, time_sec, \
+             RESET_COLOR);                                                     \
+  } while (0)
+
+#define TIME_REGION(label, code)                                               \
+  do {                                                                         \
+    clock_t start = clock();                                                   \
+    code clock_t end = clock();                                                \
+    double time_sec = TIME_DIFF(start, end);                                   \
+    PRINT_TIME(label, time_sec);                                               \
+  } while (0)
+
 
 Type type_table[1024] = {0};
 size_t type_table_length = 0;
@@ -70,6 +102,11 @@ void parse_program(Lexer_State *state, AST_Arena *arena, AST *program) {
   }
 }
 
+#include <stdio.h>
+
+void *popen(char*, char*);
+int pclose(void*);
+
 int main(int argc, char *argv[]) {
   Lexer_State state;
   lexer_state_read_file(&state, "max.it");
@@ -77,49 +114,39 @@ int main(int argc, char *argv[]) {
   AST_Arena arena = {0};
   AST program;
 
-  clock_t start, end;
-  double cpu_time_used;
-
   // Parsing phase
-  start = clock();
-  parse_program(&state, &arena, &program);
-  end = clock();
-  cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-  printf("parsed %ld statements in %f seconds\n", program.statements.length, cpu_time_used);
+  TIME_REGION("parsed", { parse_program(&state, &arena, &program); });
 
   // Typing phase
-  start = clock();
-  type_check_program(program);
-  end = clock();
-  cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-  printf("completed type checking in %f seconds\n", cpu_time_used);
+  TIME_REGION("completed type checking", { type_check_program(program); });
 
   // Emitting phase
-  {
-    String_Builder builder;
+  String_Builder builder;
+  char* c_code;
+  TIME_REGION("emitted program", {
     string_builder_init(&builder);
-
-    start = clock();
     emit_program(program, &builder);
-    end = clock();
-    cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-    printf("emitted program in %f seconds\n", cpu_time_used);
-
-    char *c_code = string_builder_get_string(&builder);
+    c_code = string_builder_get_string(&builder);
     string_builder_free(&builder);
-
-    FILE *file = fopen("generated/output.c", "w");
-    int length = strlen(c_code);
-    fwrite(c_code, sizeof(char), length, file);
-    fclose(file);
-  }
+  });
 
   // Compiling phase
-  start = clock();
-  system("clang -std=c23 -w -g generated/output.c -o generated/output && ./generated/output");
-  end = clock();
-  cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-  printf("compiled and executed program in %f seconds\n", cpu_time_used);
+  TIME_REGION("write file, compile c code.", {
+    FILE *clang = popen("clang -std=c23 -w -x c - -o generated/output", "w");
+    if (clang == NULL) {
+      perror("popen");
+      exit(EXIT_FAILURE);
+    }
+    fprintf(clang, "%s", c_code);
+    if (pclose(clang) == -1) {
+      perror("pclose");
+      exit(EXIT_FAILURE);
+    }
+  });
+
+  printf("%srunning './generated/output' binary...%s\n", RUN_COLOR,
+         RESET_COLOR);
+  TIME_REGION("executed program", { system("./generated/output"); });
 
   free_lexer_state(&state);
   return 0;
