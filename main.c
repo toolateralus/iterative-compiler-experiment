@@ -129,8 +129,11 @@ int main(int argc, char *argv[]) {
       panic("Unable to find entry point. Be sure to mark one of your functions with `fn ...() @entry { ... }` the `@entry` @tribute :D");
     }
 
-    generate_ir(&context, entry_point);
+    generate_ir(&context, &program);
     printf("generated %ld instructions\n", context.length);
+
+
+    write_ir_to_file(&context, "generated/output.ir");
   }
 
   free_lexer_state(&state);

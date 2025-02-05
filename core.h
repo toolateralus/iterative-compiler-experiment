@@ -24,10 +24,10 @@ typedef struct {
   char *data;
   int length;
 } String;
-
 static String String_new(char *data, int length) {
-  String string = {.data = malloc(sizeof(char) * length), .length = length};
+  String string = {.data = malloc(sizeof(char) * (length + 1)), .length = length};
   memcpy(string.data, data, length * sizeof(char));
+  string.data[length] = '\0'; // Null-terminate the string
   return string;
 }
 

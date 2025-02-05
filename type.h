@@ -93,6 +93,7 @@ static int64_t calculate_member_offset(Type *type, String member) {
     }
     offset += calculate_sizeof_type(type->members[i].type);
   }
+  printf("couldn't calculate member offset for type %s . %s\n", type->name.data, member.data);
   return -1;
 }
 

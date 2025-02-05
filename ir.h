@@ -18,9 +18,6 @@ typedef enum {
   OP_PUSH_ARG,
   OP_POP_ARG,
 
-  OP_PUSH,
-  OP_POP,
-
   OP_LOAD,
   OP_LOAD_CONSTANT,
 } Op_Code;
@@ -45,6 +42,15 @@ typedef struct {
 } IR_Constant;
 
 typedef struct {
+  String name;
+  struct {
+    String type;
+    int64_t offset;
+  } members[4];
+  size_t members_length;
+} IR_Type;
+
+typedef struct {
   struct { // list of all ir nodes.
     size_t length;
     size_t capacity;
@@ -55,6 +61,11 @@ typedef struct {
     size_t capacity;
     IR_Constant *data;
   } constants;
+  struct {
+    size_t length;
+    size_t capacity;
+    IR_Type *data;
+  } types;
 } IR_Context;
 
 static size_t ir_constant_push(IR_Context *ctx, IR_Constant constant) {
@@ -86,6 +97,17 @@ static size_t embed_constant_string(IR_Context *ctx, String string) {
   return ctx->constants.length - 1;
 }
 
+static size_t ir_type_push(IR_Context *ctx, IR_Type type) {
+  if (ctx->types.length >= ctx->types.capacity) {
+    ctx->types.capacity =
+        ctx->types.capacity ? ctx->types.capacity * 4 : 1;
+    ctx->types.data = realloc(ctx->types.data, ctx->types.capacity *
+                                                       sizeof(IR_Type));
+  }
+  ctx->types.data[ctx->types.length] = type;
+  return ctx->types.length++;
+}
+
 static inline void ir_push(IR_Context *data, IR ir) {
   if (data->length >= data->capacity) {
     data->capacity = data->capacity ? data->capacity * 4 : 1;
@@ -107,10 +129,73 @@ static size_t get_sizeof_block(AST *node) {
   return size;
 }
 
-static void emit_ir(IR_Context *ctx, AST *node) {
+typedef struct {
+  AST *node;
+  bool emitted;
+} FunctionEntry;
+
+typedef struct {
+  size_t length;
+  size_t capacity;
+  FunctionEntry *data;
+} FunctionTable;
+
+static void function_table_push(FunctionTable *table, AST *node) {
+  if (table->length >= table->capacity) {
+    table->capacity = table->capacity ? table->capacity * 2 : 1;
+    table->data = realloc(table->data, table->capacity * sizeof(FunctionEntry));
+  }
+  table->data[table->length++] =
+      (FunctionEntry){.node = node, .emitted = false};
+}
+
+static FunctionEntry *find_function(FunctionTable *table, String name) {
+  for (size_t i = 0; i < table->length; ++i) {
+    if (Strings_compare(table->data[i].node->function_declaration.name, name)) {
+      return &table->data[i];
+    }
+  }
+  return NULL;
+}
+
+static void collect_functions(FunctionTable *table, AST *node) {
+  for (int i = 0; i < node->statements.length; ++i) {
+    auto statement = node->statements.data[i];
+    switch (statement->kind) {
+    case AST_NODE_FUNCTION_DECLARATION:
+      function_table_push(table, statement);
+    default:
+      break;
+    }
+  }
+}
+
+static void emit_ir(IR_Context *ctx, AST *node, FunctionTable *table);
+
+static void emit_function_ir(IR_Context *ctx, FunctionEntry *entry,
+                             FunctionTable *table) {
+  if (entry->emitted || entry->node->kind != AST_NODE_FUNCTION_DECLARATION ||
+      entry->node->function_declaration.is_extern)
+    return;
+
+  entry->emitted = true;
+
+  AST *node = entry->node;
+  for (int i = 0; i < node->function_declaration.block->statements.length;
+       ++i) {
+    AST *statement = node->function_declaration.block->statements.data[i];
+    emit_ir(ctx, statement, table);
+  }
+
+  ir_push(ctx, (IR){.code = OP_RET});
+}
+
+static void emit_ir(IR_Context *ctx, AST *node, FunctionTable *table) {
   switch (node->kind) {
   case AST_NODE_PROGRAM: {
-    return;
+    for (int i = 0; i < node->statements.length; ++i) {
+      emit_ir(ctx, node->statements.data[i], table);
+    }
   } break;
   case AST_NODE_IDENTIFIER: {
     ir_push(ctx,
@@ -135,19 +220,10 @@ static void emit_ir(IR_Context *ctx, AST *node) {
                      .left = embed_constant_string(ctx, node->string),
                  });
   } break;
-  case AST_NODE_FUNCTION_DECLARATION: {
-    for (int i = 0; i < node->function_declaration.block->statements.length;
-         ++i) {
-      emit_ir(ctx, node->function_declaration.block->statements.data[i]);
-    }
-    ir_push(ctx, (IR){
-                     .code = OP_RET,
-                 });
-  } break;
   case AST_NODE_VARIABLE_DECLARATION: {
     size_t variable_address = ctx->length;
     if (node->variable_declaration.default_value) {
-      emit_ir(ctx, node->variable_declaration.default_value);
+      emit_ir(ctx, node->variable_declaration.default_value, table);
       ir_push(ctx, (IR){
                        .address = ctx->length,
                        .code = OP_ASSIGN,
@@ -157,12 +233,9 @@ static void emit_ir(IR_Context *ctx, AST *node) {
     Symbol *symbol = find_symbol(node->parent, node->variable_declaration.name);
     symbol->address = variable_address;
   } break;
-
   case AST_NODE_ASSIGNMENT: {
-    // TODO: IDK if this is gonna work.
-    size_t value_address =
-        find_symbol(node->parent, node->assignment.name)->address;
-    emit_ir(ctx, node->assignment.right);
+    size_t value_address = ctx->length;
+    emit_ir(ctx, node->assignment.right, table);
     ir_push(ctx, (IR){
                      .address = ctx->length,
                      .code = OP_ASSIGN,
@@ -171,27 +244,40 @@ static void emit_ir(IR_Context *ctx, AST *node) {
   } break;
   case AST_NODE_FUNCTION_CALL: {
     auto symbol = find_symbol(node->parent, node->function_call.name);
+    FunctionEntry *entry = find_function(table, node->function_call.name);
+    if (entry) {
+      emit_function_ir(ctx, entry, table);
+    }
     for (int i = 0; i < node->function_call.arguments_length; ++i) {
-      emit_ir(ctx, node->function_call.arguments[i]);
+      emit_ir(ctx, node->function_call.arguments[i], table);
       ir_push(ctx, (IR){
                        .address = ctx->length,
                        .code = OP_PUSH_ARG,
                    });
     }
-    ir_push(
-        ctx,
-        (IR){
-            .address = ctx->length,
-            .code = OP_CALL,
-            .left =
-                find_symbol(node->parent, node->function_call.name)->address,
-        });
+    ir_push(ctx, (IR){
+                     .address = ctx->length,
+                     .code = OP_CALL,
+                     .left = symbol->address,
+                 });
     for (int i = 0; i < node->function_call.arguments_length; ++i) {
       ir_push(ctx, (IR){
                        .address = ctx->length,
                        .code = OP_POP_ARG,
                    });
     }
+  } break;
+  case AST_NODE_TYPE_DECLARATION: {
+    IR_Type type = {
+        .name = node->type_declaration.name,
+    };
+    for (size_t i = 0; i < node->type_declaration.members_length; ++i) {
+      AST_Type_Member member = node->type_declaration.members[i];
+      type.members[i].type = member.type;
+      type.members[i].offset = calculate_member_offset(find_type(member.type), member.name);
+      type.members_length++;
+    }
+    ir_type_push(ctx, type);
   } break;
   case AST_NODE_DOT_EXPRESSION: {
     Symbol *left = find_symbol(node->parent, node->dot_expression.left);
@@ -202,7 +288,7 @@ static void emit_ir(IR_Context *ctx, AST *node) {
 
     if (node->dot_expression.assignment_value) {
       size_t value_address = ctx->length;
-      emit_ir(ctx, node->dot_expression.assignment_value);
+      emit_ir(ctx, node->dot_expression.assignment_value, table);
       ir_push(ctx, (IR){
                        .address = ctx->length,
                        .code = OP_SEP,
@@ -217,11 +303,9 @@ static void emit_ir(IR_Context *ctx, AST *node) {
                    });
     }
   } break;
-
   case AST_NODE_BLOCK: {
     for (int i = 0; i < node->statements.length; ++i) {
-      auto statement = node->statements.data[i];
-      emit_ir(ctx, statement);
+      emit_ir(ctx, node->statements.data[i], table);
     }
   } break;
   default:
@@ -229,18 +313,95 @@ static void emit_ir(IR_Context *ctx, AST *node) {
   }
 }
 
-static void generate_ir(IR_Context *ctx, AST *entry_point) {
-  if (entry_point->kind != AST_NODE_FUNCTION_DECLARATION ||
-      !entry_point->function_declaration.is_entry) {
-    panic("Error in generate_ir :: can only generate starting from the entry "
-          "point of the program. the main function must be marked @entry");
-  }
-  auto decl = entry_point->function_declaration;
+static void generate_ir(IR_Context *ctx, AST *program) {
+  FunctionTable function_table = {0};
 
-  for (int i = 0; i < decl.block->statements.length; ++i) {
-    AST *statement = decl.block->statements.data[i];
-    emit_ir(ctx, statement);
+  for (int i = 0; i < program->statements.length; ++i) {
+    AST *statement = program->statements.data[i];
+    if (statement->kind == AST_NODE_TYPE_DECLARATION) {
+      emit_ir(ctx, statement, &function_table);
+    }
   }
+
+  collect_functions(&function_table, program);
+  for (int i = 0; i < function_table.length; ++i) {
+    emit_function_ir(ctx, &function_table.data[i], &function_table);
+  }
+}
+
+static void write_ir_to_file(IR_Context *ctx, const char *filename) {
+  FILE *file = fopen(filename, "w");
+  if (!file) {
+    perror("Failed to open file");
+    return;
+  }
+
+  // Emit types
+  for (size_t i = 0; i < ctx->types.length; ++i) {
+    IR_Type *type = &ctx->types.data[i];
+    fprintf(file, "TYPE %s\n", type->name.data);
+    for (size_t j = 0; j < type->members_length; ++j) {
+      fprintf(file, "  MEMBER %s, OFFSET %zu\n",
+              type->members[j].type.data, type->members[j].offset);
+    }
+  }
+
+  // Emit constants
+  for (size_t i = 0; i < ctx->constants.length; ++i) {
+    IR_Constant *constant = &ctx->constants.data[i];
+    switch (constant->type) {
+    case CONSTANT_NUMBER:
+      fprintf(file, "CONSTANT_NUMBER %zu, %zu\n", constant->address,
+              constant->number);
+      break;
+    case CONSTANT_STRING:
+      fprintf(file, "CONSTANT_STRING %zu, \"%s\"\n", constant->address,
+              constant->string.data);
+      break;
+    }
+  }
+
+  // Emit instructions
+  for (size_t i = 0; i < ctx->length; ++i) {
+    IR *ir = &ctx->data[i];
+    switch (ir->code) {
+    case OP_ALLOC:
+      fprintf(file, "ALLOC %zu\n", ir->address);
+      break;
+    case OP_ASSIGN:
+      fprintf(file, "ASSIGN %zu, %zu\n", ir->right, ir->left);
+      break;
+    case OP_RET:
+      fprintf(file, "RET\n");
+      break;
+    case OP_SEP:
+      fprintf(file, "SEP %zu, %zu, %zu\n", ir->address, ir->left, ir->right);
+      break;
+    case OP_GEP:
+      fprintf(file, "GEP %zu, %zu, %zu\n", ir->address, ir->left, ir->right);
+      break;
+    case OP_CALL:
+      fprintf(file, "CALL %zu\n", ir->left);
+      break;
+    case OP_PUSH_ARG:
+      fprintf(file, "PUSH_ARG %zu\n", ir->left);
+      break;
+    case OP_POP_ARG:
+      fprintf(file, "POP_ARG %zu\n", ir->left);
+      break;
+    case OP_LOAD:
+      fprintf(file, "LOAD %zu, %zu\n", ir->address, ir->left);
+      break;
+    case OP_LOAD_CONSTANT:
+      fprintf(file, "LOAD_CONSTANT %zu, %zu\n", ir->address, ir->left);
+      break;
+    default:
+      fprintf(file, "UNKNOWN_OP\n");
+      break;
+    }
+  }
+
+  fclose(file);
 }
 
 #endif

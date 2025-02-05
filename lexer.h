@@ -139,7 +139,6 @@ static Keyword keyword_map[] = {
 static Token get_token(Lexer_State *state) {
   Token token;
   token.type = TOKEN_EOF_OR_INVALID;
-  token.value = String_new(nullptr, 0);
 
   while (1) {
     char c = lexer_state_eat_char(state);
