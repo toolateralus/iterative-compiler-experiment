@@ -8,6 +8,7 @@ typedef struct LLVM_Emit_Context {
   LLVMBuilderRef builder;
   LLVMModuleRef module;
   LLVMContextRef context;
+  LLVMDIBuilderRef debug_info;
 } LLVM_Emit_Context;
 
 

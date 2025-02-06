@@ -2,22 +2,22 @@
 #include "parser.h"
 #include "type.h"
 #include <llvm-c/Core.h>
+#include <llvm-c/Error.h>
+#include <llvm-c/TargetMachine.h>
+#include <llvm-c/Transforms/PassBuilder.h>
 #include <llvm-c/Types.h>
+#include <llvm-c/DebugInfo.h>
 
 /*
   TODO: maybe we want a string struct that's just null terminated constant.
   TODO: not sure.
-
   LLVMTypeRef string_type = LLVMStructCreateNamed(ctx->context, "String");
-
   LLVMTypeRef elements[] = {
     LLVMPointerType(LLVMIntType(8), 0),   // data,
     LLVMInt64Type(),                      // length
   };
-
   LLVMStructSetBody(string_type, elements, 2, 0); // last argument is bool:
   packed.
-
 */
 
 LLVMTypeRef to_llvm_type(LLVM_Emit_Context *ctx, Type *type) {
@@ -48,8 +48,38 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
   ctx->context = LLVMContextCreate();
   ctx->builder = LLVMCreateBuilderInContext(ctx->context);
   ctx->module = LLVMModuleCreateWithNameInContext("program", ctx->context);
+  ctx->debug_info = LLVMCreateDIBuilder(ctx->module);
+  
+  LLVMInitializeNativeTarget();
+  LLVMInitializeNativeAsmPrinter();
+  LLVMInitializeNativeAsmParser();
 
-  LLVMSetTarget(ctx->module, "x86_64-pc-linux-gnu");
+  char *target_triple = LLVMGetDefaultTargetTriple();
+  char *features = LLVMGetHostCPUFeatures();
+  char *cpu = LLVMGetHostCPUName();
+
+  LLVMSetTarget(ctx->module, target_triple);
+
+  LLVMTargetRef target;
+  char *message;
+  if (LLVMGetTargetFromTriple(target_triple, &target, &message)) {
+    fprintf(stderr, "Error getting target from triple: %s\n", message);
+    LLVMDisposeMessage(message);
+    exit(1);
+  }
+
+  LLVMCodeGenOptLevel opt_level = LLVMCodeGenLevelAggressive;
+
+  LLVMTargetMachineRef machine = LLVMCreateTargetMachine(
+    target, 
+    target_triple, 
+    cpu,
+    features, 
+    opt_level, 
+    LLVMRelocPIC,
+    LLVMCodeModelDefault
+  );
+
 
   for (int i = 0; i < program->statements.length; ++i) {
     AST *statement = program->statements.data[i];
@@ -67,6 +97,17 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
     AST *statement = program->statements.data[i];
     emit_node(ctx, program->statements.data[i]);
   }
+  
+  const char *passes = "default<O3>";
+  LLVMPassBuilderOptionsRef options = LLVMCreatePassBuilderOptions();
+  // LLVMPassBuilderOptionsSetVerifyEach(options, true); // Why can we not verify? something is broken.
+  LLVMErrorRef pass_error;
+  if ((pass_error = LLVMRunPasses(ctx->module, passes, machine, options))) {
+    char * message = LLVMGetErrorMessage(pass_error);
+    fprintf(stderr, "Error running passes :: %s\n", message);;
+    exit(1);
+  }
+  LLVMDisposePassBuilderOptions(options);
 
   char *error;
   if (LLVMPrintModuleToFile(ctx->module, "generated/output.ll", &error)) {
@@ -74,37 +115,40 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
     exit(1);
   }
 
-  // Does this clean up everything?
+  LLVMDisposeMessage(target_triple);
+  LLVMDisposeMessage(features);
+  LLVMDisposeMessage(cpu);
   LLVMContextDispose(ctx->context);
   return nullptr;
 }
 
 LLVMValueRef emit_forward_declaration(LLVM_Emit_Context *ctx, AST *node) {
-  LLVMTypeRef return_type = LLVMVoidType();
+  LLVMTypeRef return_type = LLVMVoidTypeInContext(ctx->context);
   LLVMTypeRef *param_types = NULL;
   size_t parameters_length = node->function_declaration.parameters_length;
   bool is_varargs = false;
 
   if (parameters_length > 0) {
-    param_types = (LLVMTypeRef *)malloc(sizeof(LLVMTypeRef) * parameters_length);
+    param_types =
+        (LLVMTypeRef *)malloc(sizeof(LLVMTypeRef) * parameters_length);
     for (int i = 0; i < parameters_length; ++i) {
       if (node->function_declaration.parameters[i].is_varargs) {
         is_varargs = true;
         parameters_length--;
         break;
       } else {
-        param_types[i] = to_llvm_type(ctx, find_type(node->function_declaration.parameters[i].type));
+        param_types[i] = to_llvm_type(
+            ctx, find_type(node->function_declaration.parameters[i].type));
       }
     }
   }
 
-  LLVMTypeRef function_type = LLVMFunctionType(
-      return_type, param_types, parameters_length,
-      is_varargs);
+  LLVMTypeRef function_type =
+      LLVMFunctionType(return_type, param_types, parameters_length, is_varargs);
   LLVMValueRef function = LLVMAddFunction(
       ctx->module, node->function_declaration.name.data, function_type);
 
-  Symbol* symbol = find_symbol(node, node->function_declaration.name);
+  Symbol *symbol = find_symbol(node, node->function_declaration.name);
   symbol->llvm_value = function;
   symbol->llvm_function_type = function_type;
 
@@ -115,6 +159,19 @@ LLVMValueRef emit_forward_declaration(LLVM_Emit_Context *ctx, AST *node) {
   return function;
 }
 
+
+LLVMValueRef emit_function_declaration(LLVM_Emit_Context *ctx, AST *node) {
+  if (!node->function_declaration.is_extern) {
+    LLVMValueRef function = find_symbol(node, node->function_declaration.name)->llvm_value;
+    LLVMBasicBlockRef entry = LLVMAppendBasicBlockInContext(ctx->context, function, "entry");
+    LLVMPositionBuilderAtEnd(ctx->builder, entry);
+    emit_block(ctx, node->function_declaration.block);
+    LLVMBuildRetVoid(ctx->builder);
+  }
+  return nullptr;
+}
+
+
 LLVMValueRef emit_function_call(LLVM_Emit_Context *ctx, AST *node) {
   Symbol *symbol = find_symbol(node, node->function_call.name);
   LLVMValueRef function = symbol->llvm_value;
@@ -122,20 +179,8 @@ LLVMValueRef emit_function_call(LLVM_Emit_Context *ctx, AST *node) {
   for (int i = 0; i < node->function_call.arguments_length; ++i) {
     args[i] = emit_node(ctx, node->function_call.arguments[i]);
   }
-  return LLVMBuildCall2(ctx->builder, symbol->llvm_function_type, function, args,
-                        node->function_call.arguments_length, "");
-}
-LLVMValueRef emit_function_declaration(LLVM_Emit_Context *ctx, AST *node) {
-  if (!node->function_declaration.is_extern) {
-    LLVMValueRef function =
-        find_symbol(node, node->function_declaration.name)->llvm_value;
-    LLVMBasicBlockRef entry =
-        LLVMAppendBasicBlockInContext(ctx->context, function, "entry");
-    LLVMPositionBuilderAtEnd(ctx->builder, entry);
-    emit_block(ctx, node->function_declaration.block);
-    LLVMBuildRetVoid(ctx->builder);
-  }
-  return nullptr;
+  return LLVMBuildCall2(ctx->builder, symbol->llvm_function_type, function,
+                        args, node->function_call.arguments_length, "");
 }
 
 LLVMValueRef emit_type_declaration(LLVM_Emit_Context *ctx, AST *node) {
@@ -153,9 +198,9 @@ LLVMValueRef emit_number(LLVM_Emit_Context *ctx, AST *node) {
   return LLVMConstInt(LLVMInt32Type(), atoll(node->number.data), false);
 }
 
-
 LLVMValueRef emit_string(LLVM_Emit_Context *ctx, AST *node) {
-  LLVMValueRef str = LLVMBuildGlobalString(ctx->builder, node->string.data, "str");
+  LLVMValueRef str =
+      LLVMBuildGlobalString(ctx->builder, node->string.data, "str");
   return str;
 }
 
