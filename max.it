@@ -1,40 +1,11 @@
+type Vector_2(i32 x, i32 y);
+
 fn printf(String, ...) @extern;
 
 fn main() @entry {
-  i32 n = 100;
-  printf("%d\n", n);
+  Vector_2 vector;
+  vector.x = 100;
+  vector.y = 200;
+  i32 n = 225;
+  printf("n = %d, vector.x = %d, vector.y = %d\n", n, vector.x, vector.y);
 }
-
-
-
-##
-
-printf("%d\n", 2);
-i32 n = 100;
-
-Vector_2 vector;
-vector.x = 10;
-vector.y = 20;
-
-printf("%d\n", vector.x);
-// fn hello_world() {
-//   printf("Hello, world");
-// }
-
-type Vector_2(i32 x, i32 y);
-
-
-
-Vector_3 dependent; # ALLOC
-Vector_2 n = dependent.xy;
-dependent.z = 100; # ASSIGN, SEP
-printf("dependent.z = '%d'\n", dependent.z);
-printf("Hello, World!\n");
-
-type Vector_3(Vector_2 xy, i32 z);
-
-type Matrix_4x4(Vector_4 a, Vector_4 b, Vector_4 c, Vector_4 d);
-
-type Vector_4(i32 x, i32 y, i32 z, i32 w);
-
-##

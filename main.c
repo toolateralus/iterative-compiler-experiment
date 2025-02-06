@@ -61,8 +61,18 @@ int main(int argc, char *argv[]) {
   TIME_REGION("parsed", { parse_program(&state, &arena, &program); });
   TIME_REGION("completed type checking", { type_check_program(program); });
 
-  LLVM_Emit_Context ctx;
-  emit_program(&ctx, &program);
+  TIME_REGION("generated LLVM IR", {
+    LLVM_Emit_Context ctx;
+    emit_program(&ctx, &program);
+  });
+
+  TIME_REGION("compiled LLVM IR", {
+    system("clang -g generated/output.ll -o generated/output");
+  });
+
+  TIME_REGION("executed 'generated/output' binary", {
+    system("./generated/output");
+  });
 
   free_lexer_state(&state);
   return 0;

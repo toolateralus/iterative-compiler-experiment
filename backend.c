@@ -49,6 +49,8 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
   ctx->builder = LLVMCreateBuilderInContext(ctx->context);
   ctx->module = LLVMModuleCreateWithNameInContext("program", ctx->context);
 
+  LLVMSetTarget(ctx->module, "x86_64-pc-linux-gnu");
+
   for (int i = 0; i < program->statements.length; ++i) {
     AST *statement = program->statements.data[i];
     if (statement->kind == AST_NODE_TYPE_DECLARATION)
@@ -67,7 +69,7 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
   }
 
   char *error;
-  if (LLVMPrintModuleToFile(ctx->module, "generated/output.llir", &error)) {
+  if (LLVMPrintModuleToFile(ctx->module, "generated/output.ll", &error)) {
     printf("%s\n", error);
     exit(1);
   }
@@ -80,14 +82,16 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
 LLVMValueRef emit_forward_declaration(LLVM_Emit_Context *ctx, AST *node) {
   LLVMTypeRef return_type = LLVMVoidType();
   LLVMTypeRef *param_types = NULL;
+  size_t parameters_length = node->function_declaration.parameters_length;
   bool is_varargs = false;
 
-  if (node->function_declaration.parameters_length > 0) {
-    param_types = (LLVMTypeRef *)malloc(sizeof(LLVMTypeRef) * node->function_declaration.parameters_length);
-    for (int i = 0; i < node->function_declaration.parameters_length; ++i) {
+  if (parameters_length > 0) {
+    param_types = (LLVMTypeRef *)malloc(sizeof(LLVMTypeRef) * parameters_length);
+    for (int i = 0; i < parameters_length; ++i) {
       if (node->function_declaration.parameters[i].is_varargs) {
-        param_types[i] = LLVMVoidType(); // Varargs are represented as void type in LLVM
         is_varargs = true;
+        parameters_length--;
+        break;
       } else {
         param_types[i] = to_llvm_type(ctx, find_type(node->function_declaration.parameters[i].type));
       }
@@ -95,7 +99,7 @@ LLVMValueRef emit_forward_declaration(LLVM_Emit_Context *ctx, AST *node) {
   }
 
   LLVMTypeRef function_type = LLVMFunctionType(
-      return_type, param_types, node->function_declaration.parameters_length,
+      return_type, param_types, parameters_length,
       is_varargs);
   LLVMValueRef function = LLVMAddFunction(
       ctx->module, node->function_declaration.name.data, function_type);
@@ -119,7 +123,7 @@ LLVMValueRef emit_function_call(LLVM_Emit_Context *ctx, AST *node) {
     args[i] = emit_node(ctx, node->function_call.arguments[i]);
   }
   return LLVMBuildCall2(ctx->builder, symbol->llvm_function_type, function, args,
-                        node->function_call.arguments_length, "call");
+                        node->function_call.arguments_length, "");
 }
 LLVMValueRef emit_function_declaration(LLVM_Emit_Context *ctx, AST *node) {
   if (!node->function_declaration.is_extern) {
@@ -149,8 +153,10 @@ LLVMValueRef emit_number(LLVM_Emit_Context *ctx, AST *node) {
   return LLVMConstInt(LLVMInt32Type(), atoll(node->number.data), false);
 }
 
+
 LLVMValueRef emit_string(LLVM_Emit_Context *ctx, AST *node) {
-  return LLVMBuildGlobalStringPtr(ctx->builder, node->string.data, "str");
+  LLVMValueRef str = LLVMBuildGlobalString(ctx->builder, node->string.data, "str");
+  return str;
 }
 
 LLVMValueRef emit_variable_declaration(LLVM_Emit_Context *ctx, AST *node) {
