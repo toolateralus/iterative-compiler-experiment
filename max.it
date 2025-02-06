@@ -1,23 +1,29 @@
+fn printf(String, ...) @extern;
+
 fn main() @entry {
-  printf("%d\n", 2);
   i32 n = 100;
-
-  Vector_2 vector;
-  vector.x = 10;
-  vector.y = 20;
-
-  printf("%d\n", vector.x);
+  printf("%d\n", n);
 }
 
-fn hello_world() {
-  printf("Hello, world");
-}
+
+
+##
+
+printf("%d\n", 2);
+i32 n = 100;
+
+Vector_2 vector;
+vector.x = 10;
+vector.y = 20;
+
+printf("%d\n", vector.x);
+// fn hello_world() {
+//   printf("Hello, world");
+// }
 
 type Vector_2(i32 x, i32 y);
 
-fn printf(String, ...) @extern;
 
-##
 
 Vector_3 dependent; # ALLOC
 Vector_2 n = dependent.xy;

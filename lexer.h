@@ -101,7 +101,7 @@ static void lexer_state_read_file(Lexer_State *state, const char *filename) {
   fclose(file);
 
   state->position = 0;
-
+  state->lookahead_length = 0;
   memset(state->lookahead, 0, sizeof(state->lookahead));
 }
 
@@ -227,20 +227,22 @@ static inline void lexer_state_populate_lookahead_buffer(Lexer_State *state) {
 }
 
 static inline Token token_peek(Lexer_State *state) {
+  lexer_state_populate_lookahead_buffer(state);
   return state->lookahead[0];
 }
 
 static inline Token token_eat(Lexer_State *state) {
+  lexer_state_populate_lookahead_buffer(state);
   Token token = state->lookahead[0];
   for (int i = 1; i < state->lookahead_length; ++i) {
     state->lookahead[i - 1] = state->lookahead[i];
   }
   state->lookahead_length--;
-  lexer_state_populate_lookahead_buffer(state);
   return token;
 }
 
 static inline Token token_lookahead(Lexer_State *state, int n) {
+  lexer_state_populate_lookahead_buffer(state);
   if (n >= state->lookahead_length) {
     panic("lookahead out of bounds");
   }

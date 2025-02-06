@@ -10,6 +10,8 @@ typedef struct LLVM_Emit_Context {
   LLVMContextRef context;
 } LLVM_Emit_Context;
 
+
+LLVMValueRef emit_forward_declaration(LLVM_Emit_Context *ctx, AST *node);
 LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program);
 LLVMValueRef emit_identifier(LLVM_Emit_Context *ctx, AST *node);
 LLVMValueRef emit_number(LLVM_Emit_Context *ctx, AST *node);

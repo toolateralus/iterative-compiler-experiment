@@ -50,6 +50,19 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
   ctx->module = LLVMModuleCreateWithNameInContext("program", ctx->context);
 
   for (int i = 0; i < program->statements.length; ++i) {
+    AST *statement = program->statements.data[i];
+    if (statement->kind == AST_NODE_TYPE_DECLARATION)
+      emit_type_declaration(ctx, program->statements.data[i]);
+  }
+
+  for (int i = 0; i < program->statements.length; ++i) {
+    AST *statement = program->statements.data[i];
+    if (statement->kind == AST_NODE_FUNCTION_DECLARATION)
+      emit_forward_declaration(ctx, program->statements.data[i]);
+  }
+
+  for (int i = 0; i < program->statements.length; ++i) {
+    AST *statement = program->statements.data[i];
     emit_node(ctx, program->statements.data[i]);
   }
 
@@ -64,41 +77,61 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
   return nullptr;
 }
 
-LLVMValueRef emit_identifier(LLVM_Emit_Context *ctx, AST *node) {
-  Symbol *symbol = find_symbol(node, node->identifier);
-  return LLVMBuildLoad2(ctx->builder, LLVMTypeOf(symbol->llvm_value),
-                        symbol->llvm_value, symbol->name.data);
-}
-LLVMValueRef emit_number(LLVM_Emit_Context *ctx, AST *node) {
-  return LLVMConstInt(LLVMInt32Type(), atoll(node->number.data), false);
-}
-LLVMValueRef emit_string(LLVM_Emit_Context *ctx, AST *node) {
-  return LLVMBuildGlobalStringPtr(ctx->builder, node->string.data, "str");
-}
-LLVMValueRef emit_function_declaration(LLVM_Emit_Context *ctx,
-                                              AST *node) {
-
+LLVMValueRef emit_forward_declaration(LLVM_Emit_Context *ctx, AST *node) {
   LLVMTypeRef return_type = LLVMVoidType();
-  LLVMTypeRef param_types[node->function_declaration.parameters_length];
-  for (int i = 0; i < node->function_declaration.parameters_length; ++i) {
-    param_types[i] = to_llvm_type(
-        ctx, find_type(node->function_declaration.parameters[i].type));
+  LLVMTypeRef *param_types = NULL;
+  bool is_varargs = false;
+
+  if (node->function_declaration.parameters_length > 0) {
+    param_types = (LLVMTypeRef *)malloc(sizeof(LLVMTypeRef) * node->function_declaration.parameters_length);
+    for (int i = 0; i < node->function_declaration.parameters_length; ++i) {
+      if (node->function_declaration.parameters[i].is_varargs) {
+        param_types[i] = LLVMVoidType(); // Varargs are represented as void type in LLVM
+        is_varargs = true;
+      } else {
+        param_types[i] = to_llvm_type(ctx, find_type(node->function_declaration.parameters[i].type));
+      }
+    }
   }
-  LLVMTypeRef function_type =
-      LLVMFunctionType(return_type, param_types,
-                       node->function_declaration.parameters_length, false);
+
+  LLVMTypeRef function_type = LLVMFunctionType(
+      return_type, param_types, node->function_declaration.parameters_length,
+      is_varargs);
   LLVMValueRef function = LLVMAddFunction(
       ctx->module, node->function_declaration.name.data, function_type);
-  find_symbol(node, node->function_declaration.name)->llvm_value = function;
 
-  LLVMBasicBlockRef entry =
-      LLVMAppendBasicBlockInContext(ctx->context, function, "entry");
-  LLVMPositionBuilderAtEnd(ctx->builder, entry);
-  emit_block(ctx, node->function_declaration.block);
-  LLVMBuildRetVoid(ctx->builder);
+  Symbol* symbol = find_symbol(node, node->function_declaration.name);
+  symbol->llvm_value = function;
+  symbol->llvm_function_type = function_type;
 
+  if (param_types) {
+    free(param_types);
+  }
 
   return function;
+}
+
+LLVMValueRef emit_function_call(LLVM_Emit_Context *ctx, AST *node) {
+  Symbol *symbol = find_symbol(node, node->function_call.name);
+  LLVMValueRef function = symbol->llvm_value;
+  LLVMValueRef args[node->function_call.arguments_length];
+  for (int i = 0; i < node->function_call.arguments_length; ++i) {
+    args[i] = emit_node(ctx, node->function_call.arguments[i]);
+  }
+  return LLVMBuildCall2(ctx->builder, symbol->llvm_function_type, function, args,
+                        node->function_call.arguments_length, "call");
+}
+LLVMValueRef emit_function_declaration(LLVM_Emit_Context *ctx, AST *node) {
+  if (!node->function_declaration.is_extern) {
+    LLVMValueRef function =
+        find_symbol(node, node->function_declaration.name)->llvm_value;
+    LLVMBasicBlockRef entry =
+        LLVMAppendBasicBlockInContext(ctx->context, function, "entry");
+    LLVMPositionBuilderAtEnd(ctx->builder, entry);
+    emit_block(ctx, node->function_declaration.block);
+    LLVMBuildRetVoid(ctx->builder);
+  }
+  return nullptr;
 }
 
 LLVMValueRef emit_type_declaration(LLVM_Emit_Context *ctx, AST *node) {
@@ -106,8 +139,21 @@ LLVMValueRef emit_type_declaration(LLVM_Emit_Context *ctx, AST *node) {
   return nullptr;
 }
 
-LLVMValueRef emit_variable_declaration(LLVM_Emit_Context *ctx,
-                                              AST *node) {
+LLVMValueRef emit_identifier(LLVM_Emit_Context *ctx, AST *node) {
+  Symbol *symbol = find_symbol(node, node->identifier);
+  return LLVMBuildLoad2(ctx->builder, LLVMTypeOf(symbol->llvm_value),
+                        symbol->llvm_value, symbol->name.data);
+}
+
+LLVMValueRef emit_number(LLVM_Emit_Context *ctx, AST *node) {
+  return LLVMConstInt(LLVMInt32Type(), atoll(node->number.data), false);
+}
+
+LLVMValueRef emit_string(LLVM_Emit_Context *ctx, AST *node) {
+  return LLVMBuildGlobalStringPtr(ctx->builder, node->string.data, "str");
+}
+
+LLVMValueRef emit_variable_declaration(LLVM_Emit_Context *ctx, AST *node) {
   LLVMTypeRef var_type =
       to_llvm_type(ctx, find_type(node->variable_declaration.type));
   LLVMValueRef var = LLVMBuildAlloca(ctx->builder, var_type,
@@ -125,8 +171,9 @@ LLVMValueRef emit_assignment(LLVM_Emit_Context *ctx, AST *node) {
   Symbol *symbol = find_symbol(node, node->assignment.name);
   LLVMValueRef value = emit_node(ctx, node->assignment.right);
   LLVMBuildStore(ctx->builder, value, symbol->llvm_value);
-  // TODO: I don't think we wanna do this? I think the llvm_value in symbol should be the alloca, not just the last instruction used.
-  // symbol->llvm_value = value; 
+  // TODO: I don't think we wanna do this? I think the llvm_value in symbol
+  // should be the alloca, not just the last instruction used.
+  // symbol->llvm_value = value;
   return value;
 }
 
@@ -144,17 +191,6 @@ LLVMValueRef emit_dot_expression(LLVM_Emit_Context *ctx, AST *node) {
   } else {
     return LLVMBuildLoad2(ctx->builder, LLVMTypeOf(gep), gep, "load_dot_expr");
   }
-}
-
-LLVMValueRef emit_function_call(LLVM_Emit_Context *ctx, AST *node) {
-  Symbol *symbol = find_symbol(node, node->function_call.name);
-  LLVMValueRef function = symbol->llvm_value;
-  LLVMValueRef args[node->function_call.arguments_length];
-  for (int i = 0; i < node->function_call.arguments_length; ++i) {
-    args[i] = emit_node(ctx, node->function_call.arguments[i]);
-  }
-  return LLVMBuildCall2(ctx->builder, LLVMTypeOf(function), function, args,
-                        node->function_call.arguments_length, "call");
 }
 
 LLVMValueRef emit_block(LLVM_Emit_Context *ctx, AST *node) {

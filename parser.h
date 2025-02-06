@@ -59,6 +59,7 @@ typedef struct Symbol {
   Type *type;
   struct Symbol *next;
   LLVMValueRef llvm_value;
+  LLVMTypeRef llvm_function_type;
 } Symbol;
 
 typedef struct AST {
