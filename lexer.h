@@ -69,6 +69,7 @@ typedef struct Source_Location {
 typedef struct {
   Token_Type type;
   String value;
+  Source_Location location;
 } Token;
 
 typedef struct {
@@ -77,6 +78,7 @@ typedef struct {
   size_t position;
   Token lookahead[8];
   size_t lookahead_length;
+  Source_Location location;
 } Lexer_State;
 
 static void free_lexer_state(Lexer_State *state) {
@@ -106,6 +108,11 @@ static void lexer_state_read_file(Lexer_State *state, const char *filename) {
 
   state->position = 0;
   state->lookahead_length = 0;
+  state->location = (Source_Location){
+    .column = 1,
+    .line = 1,
+    .file = 0, // TODO: get index of file.
+  };
   memset(state->lookahead, 0, sizeof(state->lookahead));
 }
 
@@ -115,9 +122,17 @@ static char lexer_state_peek_char(Lexer_State *state) {
   }
   return state->content[state->position];
 }
+
 static char lexer_state_eat_char(Lexer_State *state) {
   if (state->position >= state->length) {
     return EOF;
+  }
+  char c = state->content[state->position];
+  if (c == '\n') {
+    state->location.line++;
+    state->location.column = 1;
+  } else {
+    state->location.column++;
   }
   return state->content[state->position++];
 }
@@ -142,6 +157,7 @@ static Keyword keyword_map[] = {
 
 static Token get_token(Lexer_State *state) {
   Token token;
+  token.location = state->location;
   token.type = TOKEN_EOF_OR_INVALID;
 
   while (1) {

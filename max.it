@@ -3,7 +3,8 @@ type Vector_2(i32 x, i32 y, i32 z, i32 w);
 fn printf(String, ...) @extern;
 
 fn main() @entry {
-  Vector_2 vector; 
+  Vector_2 vector;
+  
   ## 
     = .{
       x = 100,
