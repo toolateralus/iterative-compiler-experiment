@@ -5,6 +5,7 @@
 #include "lexer.h"
 #include "type.h"
 #include <llvm-c/Types.h>
+#include <stdarg.h>
 
 typedef enum {
   AST_NODE_PROGRAM,
@@ -68,6 +69,7 @@ typedef struct AST {
   AST_Node_Kind kind;
   Type *type;
   Symbol symbol_table;
+  Source_Location location;
 
   struct AST *parent;
 
@@ -114,6 +116,24 @@ typedef struct AST {
   };
 } AST;
 
+
+[[noreturn]]
+static void parse_panic(Source_Location location, const char * message) {
+  fprintf(stderr, "at: %s:%d:%d\nerror: %s\n", location.file, location.line, location.line, message);
+  exit(1);
+}
+
+[[noreturn]]
+static void parse_panicf(Source_Location location, const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  fprintf(stderr, "at: %s:%d:%d\nerror: ", location.file, location.line, location.line);
+  vfprintf(stderr, format, args);
+  fprintf(stderr, "\n");
+  va_end(args);
+  exit(1);
+}
+
 Symbol *find_symbol(AST *scope, String name);
 
 void insert_symbol(AST *scope, String name, AST *node, Type *type);
@@ -124,11 +144,12 @@ typedef struct AST_Arena {
   struct AST_Arena *next;
 } AST_Arena;
 
-static inline AST *ast_arena_alloc(AST_Arena *arena, AST_Node_Kind kind) {
+static inline AST *ast_arena_alloc(Lexer_State* state, AST_Arena *arena, AST_Node_Kind kind) {
   if (arena->nodes_length < 1024) {
     AST *node = &arena->nodes[arena->nodes_length++];
     node->kind = kind;
     node->type = nullptr;
+    node->location = state->location;
     return node;
   } else {
     if (arena->next == NULL) {
@@ -136,7 +157,7 @@ static inline AST *ast_arena_alloc(AST_Arena *arena, AST_Node_Kind kind) {
       arena->next->nodes_length = 0;
       arena->next->next = NULL;
     }
-    return ast_arena_alloc(arena->next, kind);
+    return ast_arena_alloc(state, arena->next, kind);
   }
 }
 

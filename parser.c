@@ -7,7 +7,7 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state, AST *parent) {
 
   switch (token.type) {
   case TOKEN_STRING: {
-    AST *node = ast_arena_alloc(arena, AST_NODE_STRING);
+    AST *node = ast_arena_alloc(state, arena, AST_NODE_STRING);
     node->string = token.value;
     node->parent = parent;
     return node;
@@ -17,7 +17,7 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state, AST *parent) {
 
     if (next_token.type == TOKEN_DOT) { // Parse dot expressions
       token_eat(state);                 // Consume '.'
-      AST *dot_node = ast_arena_alloc(arena, AST_NODE_DOT_EXPRESSION);
+      AST *dot_node = ast_arena_alloc(state, arena, AST_NODE_DOT_EXPRESSION);
       dot_node->dot_expression.left = token.value;
       dot_node->dot_expression.right =
           token_expect(state, TOKEN_IDENTIFIER).value;
@@ -32,7 +32,7 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state, AST *parent) {
     }
 
     if (next_token.type == TOKEN_OPEN_PAREN) { // Parse function calls
-      AST *call_node = ast_arena_alloc(arena, AST_NODE_FUNCTION_CALL);
+      AST *call_node = ast_arena_alloc(state, arena, AST_NODE_FUNCTION_CALL);
       vector_init(&call_node->function_call.arguments, sizeof(AST*));
       call_node->function_call.name = token.value;
       call_node->parent = parent;
@@ -55,18 +55,15 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state, AST *parent) {
       String name = token_expect(state, TOKEN_IDENTIFIER).value;
       if (token_peek(state).type == TOKEN_ASSIGN) {
         token_eat(state); // Consume '='
-        AST *var_decl_node =
-            ast_arena_alloc(arena, AST_NODE_VARIABLE_DECLARATION);
+        AST *var_decl_node = ast_arena_alloc(state, arena, AST_NODE_VARIABLE_DECLARATION);
         var_decl_node->variable_declaration.type = type;
         var_decl_node->variable_declaration.name = name;
-        var_decl_node->variable_declaration.default_value =
-            parse_expression(arena, state, var_decl_node);
+        var_decl_node->variable_declaration.default_value = parse_expression(arena, state, var_decl_node);
         var_decl_node->parent = parent;
         token_expect(state, TOKEN_SEMICOLON);
         return var_decl_node;
       } else {
-        AST *assignment_node =
-            ast_arena_alloc(arena, AST_NODE_VARIABLE_DECLARATION);
+        AST *assignment_node = ast_arena_alloc(state, arena, AST_NODE_VARIABLE_DECLARATION);
         assignment_node->variable_declaration.type = type;
         assignment_node->variable_declaration.name = name;
         assignment_node->parent = parent;
@@ -75,19 +72,19 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state, AST *parent) {
       }
     }
 
-    AST *node = ast_arena_alloc(arena, AST_NODE_IDENTIFIER);
+    AST *node = ast_arena_alloc(state, arena, AST_NODE_IDENTIFIER);
     node->identifier = token.value;
     node->parent = parent;
     return node;
   }
   case TOKEN_NUMBER: {
-    AST *node = ast_arena_alloc(arena, AST_NODE_NUMBER);
+    AST *node = ast_arena_alloc(state, arena, AST_NODE_NUMBER);
     node->number = token.value;
     node->parent = parent;
     return node;
   }
   default: {
-    panic("Unexpected token in expression");
+    parse_panic(token.location, "Unexpected token in expression");
     return NULL;
   }
   }
@@ -97,7 +94,7 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state,
                                 AST *parent) {
   token_expect(state, TOKEN_FN_KEYWORD);
   String name = token_expect(state, TOKEN_IDENTIFIER).value;
-  AST *node = ast_arena_alloc(arena, AST_NODE_FUNCTION_DECLARATION);
+  AST *node = ast_arena_alloc(state, arena, AST_NODE_FUNCTION_DECLARATION);
   vector_init(&node->function_declaration.parameters, sizeof(AST_Parameter));
   node->function_declaration.is_entry = false;
   node->function_declaration.is_extern = false;
@@ -137,7 +134,7 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state,
     } else if (String_equals(key, "entry")) {
       node->function_declaration.is_entry = true;
     } else {
-      panic("unexpected identifier for '@...' AT-tribute :PPP");
+      parse_panic(state->location, "unexpected identifier for '@...' @tribute :PPP");
     }
   }
 
@@ -151,7 +148,7 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state,
 
 AST *parse_type_declaration(AST_Arena *arena, Lexer_State *state, AST *parent) {
   token_expect(state, TOKEN_TYPE_KEYWORD);
-  AST *node = ast_arena_alloc(arena, AST_NODE_TYPE_DECLARATION);
+  AST *node = ast_arena_alloc(state, arena, AST_NODE_TYPE_DECLARATION);
   vector_init(&node->type_declaration.members, sizeof(AST_Type_Member));
   String name = token_expect(state, TOKEN_IDENTIFIER).value;
   node->parent = parent;
@@ -174,7 +171,7 @@ AST *parse_type_declaration(AST_Arena *arena, Lexer_State *state, AST *parent) {
 }
 
 AST *parse_block(AST_Arena *arena, Lexer_State *state, AST *parent) {
-  AST *node = ast_arena_alloc(arena, AST_NODE_BLOCK);
+  AST *node = ast_arena_alloc(state, arena, AST_NODE_BLOCK);
   node->parent = parent;
   token_expect(state, TOKEN_OPEN_CURLY);
   while (token_peek(state).type != TOKEN_CLOSE_CURLY) {
@@ -202,8 +199,7 @@ AST *parse_next_statement(AST_Arena *arena, Lexer_State *state, AST *parent) {
     return parse_type_declaration(arena, state, parent);
   }
   default: {
-    fprintf(stderr, "Unexpected token: %s\n", Token_Type_Name(token.type));
-    exit(1);
+    parse_panicf(state->location, "Unexpected token: %s\n", Token_Type_Name(token.type));
   }
   }
 }
@@ -211,8 +207,7 @@ AST *parse_next_statement(AST_Arena *arena, Lexer_State *state, AST *parent) {
 void insert_symbol(AST *scope, String name, AST *node, Type *type) {
   auto symbol = find_symbol(scope, name);
   if (symbol) {
-    fprintf(stderr, "re-declaration of symbol %s\n", name.data);
-    exit(1);
+    parse_panicf(node->location, "re-declaration of symbol %s\n", name.data);
   }
   symbol = &scope->symbol_table;
   while (symbol->next) {

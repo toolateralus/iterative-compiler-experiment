@@ -63,7 +63,8 @@ static const char *Token_Type_Name(Token_Type type) {
 }
 
 typedef struct Source_Location {
-  int line, column, file;
+  int line, column;
+  const char *file;
 } Source_Location;
 
 typedef struct {
@@ -111,7 +112,7 @@ static void lexer_state_read_file(Lexer_State *state, const char *filename) {
   state->location = (Source_Location){
     .column = 1,
     .line = 1,
-    .file = 0, // TODO: get index of file.
+    .file = filename,
   };
   memset(state->lookahead, 0, sizeof(state->lookahead));
 }

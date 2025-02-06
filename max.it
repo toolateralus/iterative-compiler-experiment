@@ -4,14 +4,6 @@ fn printf(String, ...) @extern;
 
 fn main() @entry {
   Vector_2 vector;
-  
-  ## 
-    = .{
-      x = 100,
-      y = 100
-    };
-  ##
-
   i32 n = 225;
   printf("n = %d, vector.x = %d, vector.y = %d\n", n, vector.x, vector.y);
 }
