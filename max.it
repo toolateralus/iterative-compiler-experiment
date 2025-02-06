@@ -1,11 +1,16 @@
-type Vector_2(i32 x, i32 y);
+type Vector_2(i32 x, i32 y, i32 z, i32 w);
 
 fn printf(String, ...) @extern;
 
 fn main() @entry {
-  Vector_2 vector;
-  vector.x = 100;
-  vector.y = 200;
+  Vector_2 vector; 
+  ## 
+    = .{
+      x = 100,
+      y = 100
+    };
+  ##
+
   i32 n = 225;
   printf("n = %d, vector.x = %d, vector.y = %d\n", n, vector.x, vector.y);
 }

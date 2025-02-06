@@ -3,11 +3,11 @@
 #include "parser.h"
 #include "type.h"
 #include <llvm-c/Core.h>
+#include <llvm-c/DebugInfo.h>
 #include <llvm-c/Error.h>
 #include <llvm-c/TargetMachine.h>
 #include <llvm-c/Transforms/PassBuilder.h>
 #include <llvm-c/Types.h>
-#include <llvm-c/DebugInfo.h>
 
 /*
   TODO: maybe we want a string struct that's just null terminated constant.
@@ -37,9 +37,8 @@ LLVMTypeRef to_llvm_type(LLVM_Emit_Context *ctx, Type *type) {
     type->llvm_type = LLVMStructCreateNamed(ctx->context, type->name.data);
 
     LLVMTypeRef elements[type->members.length];
-    ForEach(Type_Member, member, type->members, {
-      elements[i] = to_llvm_type(ctx, member.type);
-    });
+    ForEach(Type_Member, member, type->members,
+            { elements[i] = to_llvm_type(ctx, member.type); });
     LLVMStructSetBody(type->llvm_type, elements, type->members.length, false);
     return type->llvm_type;
   };
@@ -63,6 +62,7 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
   LLVMSetTarget(ctx->module, target_triple);
 
   LLVMTargetRef target;
+  ctx->target = target;
   char *message;
   if (LLVMGetTargetFromTriple(target_triple, &target, &message)) {
     fprintf(stderr, "Error getting target from triple: %s\n", message);
@@ -72,16 +72,12 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
 
   LLVMCodeGenOptLevel opt_level = LLVMCodeGenLevelAggressive;
 
-  LLVMTargetMachineRef machine = LLVMCreateTargetMachine(
-    target, 
-    target_triple, 
-    cpu,
-    features, 
-    opt_level, 
-    LLVMRelocPIC,
-    LLVMCodeModelDefault
-  );
-
+  LLVMTargetMachineRef machine =
+      LLVMCreateTargetMachine(target, target_triple, cpu, features, opt_level,
+                              LLVMRelocPIC, LLVMCodeModelDefault);
+  
+  ctx->target_data = LLVMCreateTargetDataLayout(machine);
+  
 
   for (int i = 0; i < program->statements.length; ++i) {
     AST *statement = program->statements.data[i];
@@ -99,14 +95,16 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
     AST *statement = program->statements.data[i];
     emit_node(ctx, program->statements.data[i]);
   }
-  
+
   const char *passes = "default<O3>";
   LLVMPassBuilderOptionsRef options = LLVMCreatePassBuilderOptions();
-  // LLVMPassBuilderOptionsSetVerifyEach(options, true); // Why can we not verify? something is broken.
+  // LLVMPassBuilderOptionsSetVerifyEach(options, true); // Why can we not
+  // verify? something is broken.
   LLVMErrorRef pass_error;
   if ((pass_error = LLVMRunPasses(ctx->module, passes, machine, options))) {
-    char * message = LLVMGetErrorMessage(pass_error);
-    fprintf(stderr, "Error running passes :: %s\n", message);;
+    char *message = LLVMGetErrorMessage(pass_error);
+    fprintf(stderr, "Error running passes :: %s\n", message);
+    ;
     exit(1);
   }
   LLVMDisposePassBuilderOptions(options);
@@ -134,14 +132,14 @@ LLVMValueRef emit_forward_declaration(LLVM_Emit_Context *ctx, AST *node) {
     param_types =
         (LLVMTypeRef *)malloc(sizeof(LLVMTypeRef) * parameters_length);
     for (int i = 0; i < parameters_length; ++i) {
-      AST_Parameter parameter = V_AT(AST_Parameter, node->function_declaration.parameters, i);
+      AST_Parameter parameter =
+          V_AT(AST_Parameter, node->function_declaration.parameters, i);
       if (parameter.is_varargs) {
         is_varargs = true;
         parameters_length--;
         break;
       } else {
-        param_types[i] = to_llvm_type(
-            ctx, find_type(parameter.type));
+        param_types[i] = to_llvm_type(ctx, find_type(parameter.type));
       }
     }
   }
@@ -162,11 +160,12 @@ LLVMValueRef emit_forward_declaration(LLVM_Emit_Context *ctx, AST *node) {
   return function;
 }
 
-
 LLVMValueRef emit_function_declaration(LLVM_Emit_Context *ctx, AST *node) {
   if (!node->function_declaration.is_extern) {
-    LLVMValueRef function = find_symbol(node, node->function_declaration.name)->llvm_value;
-    LLVMBasicBlockRef entry = LLVMAppendBasicBlockInContext(ctx->context, function, "entry");
+    LLVMValueRef function =
+        find_symbol(node, node->function_declaration.name)->llvm_value;
+    LLVMBasicBlockRef entry =
+        LLVMAppendBasicBlockInContext(ctx->context, function, "entry");
     LLVMPositionBuilderAtEnd(ctx->builder, entry);
     emit_block(ctx, node->function_declaration.block);
     LLVMBuildRetVoid(ctx->builder);
@@ -174,13 +173,12 @@ LLVMValueRef emit_function_declaration(LLVM_Emit_Context *ctx, AST *node) {
   return nullptr;
 }
 
-
 LLVMValueRef emit_function_call(LLVM_Emit_Context *ctx, AST *node) {
   Symbol *symbol = find_symbol(node, node->function_call.name);
   LLVMValueRef function = symbol->llvm_value;
   LLVMValueRef args[node->function_call.arguments.length];
   for (int i = 0; i < node->function_call.arguments.length; ++i) {
-    args[i] = emit_node(ctx, V_AT(AST*, node->function_call.arguments, i));
+    args[i] = emit_node(ctx, V_AT(AST *, node->function_call.arguments, i));
   }
   return LLVMBuildCall2(ctx->builder, symbol->llvm_function_type, function,
                         args, node->function_call.arguments.length, "");
@@ -217,6 +215,11 @@ LLVMValueRef emit_variable_declaration(LLVM_Emit_Context *ctx, AST *node) {
     LLVMValueRef init =
         emit_node(ctx, node->variable_declaration.default_value);
     LLVMBuildStore(ctx->builder, init, var);
+  } else {
+    LLVMValueRef zero = LLVMConstInt(LLVMInt32Type(), 0, false);
+    LLVMValueRef size = LLVMSizeOf(var_type);
+    unsigned alignment = LLVMABIAlignmentOfType(ctx->target_data, var_type);
+    LLVMBuildMemSet(ctx->builder, var, zero, size, alignment);
   }
   return var;
 }

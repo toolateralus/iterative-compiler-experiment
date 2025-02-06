@@ -3,12 +3,15 @@
 
 #include "parser.h"
 #include "llvm-c/Types.h"
+#include <llvm-c/TargetMachine.h>
 
 typedef struct LLVM_Emit_Context {
   LLVMBuilderRef builder;
   LLVMModuleRef module;
   LLVMContextRef context;
   LLVMDIBuilderRef debug_info;
+  LLVMTargetRef target;
+  LLVMTargetDataRef target_data;
 } LLVM_Emit_Context;
 
 
