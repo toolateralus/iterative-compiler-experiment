@@ -2,6 +2,8 @@
 #define TYPE_H
 
 #include "core.h"
+#include <llvm-c/Core.h>
+#include <llvm-c/Types.h>
 #include <stdint.h>
 
 typedef struct Type Type;
@@ -17,6 +19,7 @@ typedef enum {
   STRING,
   STRUCT,
 } Type_Kind;
+
 typedef struct AST AST;
 typedef struct Type {
   AST *declaring_node;
@@ -26,7 +29,10 @@ typedef struct Type {
   size_t members_length;
   size_t size;
   size_t alignment;
+
+  LLVMTypeRef llvm_type;
 } Type;
+
 
 extern Type type_table[1024];
 extern size_t type_table_length;
@@ -54,48 +60,11 @@ static Type *create_type(AST *declaring_node, String name, Type_Kind kind, size_
   return type;
 }
 
-
-
-static int64_t calculate_sizeof_type(Type *type) {
-  if (type->members_length == 0) {
-    return type->size;
-  }
-  int64_t size = 0;
-  int64_t max_alignment = 1;
-  for (int i = 0; i < type->members_length; ++i) {
-    Type *member_type = type->members[i].type;
-    int64_t member_size = calculate_sizeof_type(member_type);
-    int64_t alignment = member_type->alignment;
-
-    // Update max alignment
-    if (alignment > max_alignment) {
-      max_alignment = alignment;
-    }
-
-    // Add padding to align the member
-    size = (size + alignment - 1) & ~(alignment - 1);
-
-    // Add the member size
-    size += member_size;
-  }
-
-  // Add padding to align the total size to the max alignment
-  size = (size + max_alignment - 1) & ~(max_alignment - 1);
-
-  type->size = size;
-  return size;
-}
-
-static int64_t calculate_member_offset(Type *type, String member) {
-  int64_t offset = 0;
+static int8_t get_member_index(Type *type, String member) {
   for (int i = 0; i < type->members_length; ++i) {
     if (Strings_compare(type->members[i].name, member)) {
-      return offset;
+      return i;
     }
-    int64_t alignment = type->members[i].type->alignment;
-    offset = (offset + alignment - 1) & ~(alignment - 1);
-    auto size = calculate_sizeof_type(type->members[i].type);
-    offset += size;
   }
   return -1;
 }

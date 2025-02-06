@@ -4,6 +4,7 @@
 #include "core.h"
 #include "lexer.h"
 #include "type.h"
+#include <llvm-c/Types.h>
 
 typedef enum {
   AST_NODE_PROGRAM,
@@ -56,8 +57,8 @@ typedef struct Symbol {
   String name;
   AST *node;
   Type *type;
-  size_t address;
   struct Symbol *next;
+  LLVMValueRef llvm_value;
 } Symbol;
 
 typedef struct AST {

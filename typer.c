@@ -90,8 +90,6 @@ Typer_Progress typer_type_declaration(AST *node) {
     type->members[i].type = member_type;
     type->members_length++;
   }
-
-  type->size = calculate_sizeof_type(type);
   
   node->type = &type_table[VOID];
   node->typing_complete = true;
