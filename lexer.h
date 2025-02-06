@@ -2,6 +2,7 @@
 #define LEX_H
 #include "core.h"
 #include <ctype.h>
+#include <stdio.h>
 
 typedef enum {
   TOKEN_EOF_OR_INVALID,
@@ -23,6 +24,29 @@ typedef enum {
 
   TOKEN_OPEN_CURLY,
   TOKEN_CLOSE_CURLY,
+
+  TOKEN_ADD,
+  TOKEN_SUB,
+  TOKEN_DIV,
+  TOKEN_MUL,
+  TOKEN_MOD,
+
+  TOKEN_AND,
+  TOKEN_OR,
+  TOKEN_XOR,
+  TOKEN_SHL,
+  TOKEN_SHR,
+
+  TOKEN_EQ,
+  TOKEN_NEQ,
+  TOKEN_LOGICAL_NOT,
+  TOKEN_LOGICAL_OR,
+
+  TOKEN_LT,
+  TOKEN_GT,
+  TOKEN_GTE,
+  TOKEN_LTE,
+
 } Token_Type;
 
 static const char *Token_Type_Name(Token_Type type) {
@@ -110,9 +134,9 @@ static void lexer_state_read_file(Lexer_State *state, const char *filename) {
   state->position = 0;
   state->lookahead_length = 0;
   state->location = (Source_Location){
-    .column = 1,
-    .line = 1,
-    .file = filename,
+      .column = 1,
+      .line = 1,
+      .file = filename,
   };
   memset(state->lookahead, 0, sizeof(state->lookahead));
 }
@@ -138,12 +162,15 @@ static char lexer_state_eat_char(Lexer_State *state) {
   return state->content[state->position++];
 }
 
-constexpr static Token_Type punctuation_map[255] = {
-    ['@'] = TOKEN_AT,          ['.'] = TOKEN_DOT,
-    ['='] = TOKEN_ASSIGN,      [';'] = TOKEN_SEMICOLON,
-    [','] = TOKEN_COMMA,       ['('] = TOKEN_OPEN_PAREN,
-    [')'] = TOKEN_CLOSE_PAREN, ['{'] = TOKEN_OPEN_CURLY,
-    ['}'] = TOKEN_CLOSE_CURLY,
+typedef struct {
+  const char *key;
+  Token_Type value;
+} Operator;
+
+static Operator operator_map[] = {
+    {"@", TOKEN_AT},          {"=", TOKEN_ASSIGN},      {",", TOKEN_COMMA},
+    {")", TOKEN_CLOSE_PAREN}, {"}", TOKEN_CLOSE_CURLY}, {".", TOKEN_DOT},
+    {";", TOKEN_SEMICOLON},   {"(", TOKEN_OPEN_PAREN},  {"{", TOKEN_OPEN_CURLY},
 };
 
 typedef struct Keyword {
@@ -232,8 +259,40 @@ static Token get_token(Lexer_State *state) {
       token.value = String_new(start, length);
       return token;
     } else if (ispunct(c)) {
-      token.type = punctuation_map[c];
-      token.value = String_new(&state->content[state->position - 1], 1);
+      char next_char = lexer_state_peek_char(state);
+      char punct[3] = {c, next_char, '\0'};
+      Token_Type type = TOKEN_EOF_OR_INVALID;
+      size_t length = 1;
+
+      if (ispunct(next_char)) {
+        for (int i = 0; i < sizeof(operator_map) / sizeof(Operator); ++i) {
+          if (strcmp(punct, operator_map[i].key) == 0) {
+            type = operator_map[i].value;
+            lexer_state_eat_char(state);
+            length = 2;
+            break;
+          }
+        }
+      }
+
+      if (type == TOKEN_EOF_OR_INVALID) {
+        punct[1] = '\0';
+        for (int i = 0; i < sizeof(operator_map) / sizeof(Operator); ++i) {
+          if (strcmp(punct, operator_map[i].key) == 0) {
+            type = operator_map[i].value;
+            break;
+          }
+        }
+      }
+
+      if (type == TOKEN_EOF_OR_INVALID) {
+        fprintf(stderr, "Unknown operator %s\n", punct);
+        exit(1);
+      }
+
+      token.type = type;
+      token.value =
+          String_new(&state->content[state->position - length], length);
       return token;
     } else {
       return token;
