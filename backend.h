@@ -27,7 +27,7 @@ LLVMValueRef emit_assignment(LLVM_Emit_Context *ctx, AST *node);
 LLVMValueRef emit_dot_expression(LLVM_Emit_Context *ctx, AST *node);
 LLVMValueRef emit_function_call(LLVM_Emit_Context *ctx, AST *node);
 LLVMValueRef emit_block(LLVM_Emit_Context *ctx, AST *node);
-
+LLVMValueRef emit_binary_expression(LLVM_Emit_Context *ctx, AST *node);
 LLVMValueRef emit_node(LLVM_Emit_Context *ctx, AST *node);
 #endif
 

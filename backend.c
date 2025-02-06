@@ -1,5 +1,6 @@
 #include "backend.h"
 #include "core.h"
+#include "lexer.h"
 #include "parser.h"
 #include "type.h"
 #include <llvm-c/Core.h>
@@ -75,9 +76,8 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
   LLVMTargetMachineRef machine =
       LLVMCreateTargetMachine(target, target_triple, cpu, features, opt_level,
                               LLVMRelocPIC, LLVMCodeModelDefault);
-  
+
   ctx->target_data = LLVMCreateTargetDataLayout(machine);
-  
 
   for (int i = 0; i < program->statements.length; ++i) {
     AST *statement = program->statements.data[i];
@@ -96,18 +96,20 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
     emit_node(ctx, program->statements.data[i]);
   }
 
-  const char *passes = "default<O3>";
-  LLVMPassBuilderOptionsRef options = LLVMCreatePassBuilderOptions();
-  // LLVMPassBuilderOptionsSetVerifyEach(options, true); // Why can we not
-  // verify? something is broken.
-  LLVMErrorRef pass_error;
-  if ((pass_error = LLVMRunPasses(ctx->module, passes, machine, options))) {
-    char *message = LLVMGetErrorMessage(pass_error);
-    fprintf(stderr, "Error running passes :: %s\n", message);
-    ;
-    exit(1);
+  if (COMPILATION_MODE == CM_RELEASE) {
+    const char *passes = "default<O3>";
+    LLVMPassBuilderOptionsRef options = LLVMCreatePassBuilderOptions();
+    // LLVMPassBuilderOptionsSetVerifyEach(options, true); // Why can we not
+    // verify? something is broken.
+    LLVMErrorRef pass_error;
+    if ((pass_error = LLVMRunPasses(ctx->module, passes, machine, options))) {
+      char *message = LLVMGetErrorMessage(pass_error);
+      fprintf(stderr, "Error running passes :: %s\n", message);
+      ;
+      exit(1);
+    }
+    LLVMDisposePassBuilderOptions(options);
   }
-  LLVMDisposePassBuilderOptions(options);
 
   char *error;
   if (LLVMPrintModuleToFile(ctx->module, "generated/output.ll", &error)) {
@@ -177,9 +179,13 @@ LLVMValueRef emit_function_call(LLVM_Emit_Context *ctx, AST *node) {
   Symbol *symbol = find_symbol(node, node->function_call.name);
   LLVMValueRef function = symbol->llvm_value;
   LLVMValueRef args[node->function_call.arguments.length];
+
   for (int i = 0; i < node->function_call.arguments.length; ++i) {
-    args[i] = emit_node(ctx, V_AT(AST *, node->function_call.arguments, i));
+    LLVMValueRef arg =
+        emit_node(ctx, V_AT(AST *, node->function_call.arguments, i));
+    args[i] = arg;
   }
+
   return LLVMBuildCall2(ctx->builder, symbol->llvm_function_type, function,
                         args, node->function_call.arguments.length, "");
 }
@@ -191,10 +197,9 @@ LLVMValueRef emit_type_declaration(LLVM_Emit_Context *ctx, AST *node) {
 
 LLVMValueRef emit_identifier(LLVM_Emit_Context *ctx, AST *node) {
   Symbol *symbol = find_symbol(node, node->identifier);
-  return LLVMBuildLoad2(ctx->builder, LLVMTypeOf(symbol->llvm_value),
+  return LLVMBuildLoad2(ctx->builder, to_llvm_type(ctx, symbol->type),
                         symbol->llvm_value, symbol->name.data);
 }
-
 LLVMValueRef emit_number(LLVM_Emit_Context *ctx, AST *node) {
   return LLVMConstInt(LLVMInt32Type(), atoll(node->number.data), false);
 }
@@ -228,9 +233,6 @@ LLVMValueRef emit_assignment(LLVM_Emit_Context *ctx, AST *node) {
   Symbol *symbol = find_symbol(node, node->assignment.name);
   LLVMValueRef value = emit_node(ctx, node->assignment.right);
   LLVMBuildStore(ctx->builder, value, symbol->llvm_value);
-  // TODO: I don't think we wanna do this? I think the llvm_value in symbol
-  // should be the alloca, not just the last instruction used.
-  // symbol->llvm_value = value;
   return value;
 }
 
@@ -246,7 +248,7 @@ LLVMValueRef emit_dot_expression(LLVM_Emit_Context *ctx, AST *node) {
     LLVMBuildStore(ctx->builder, value, gep);
     return value;
   } else {
-    return LLVMBuildLoad2(ctx->builder, LLVMTypeOf(gep), gep, "load_dot_expr");
+    return LLVMBuildLoad2(ctx->builder, LLVMPointerType(to_llvm_type(ctx, node->type), 0), gep, "load_dot_expr");
   }
 }
 
@@ -281,8 +283,54 @@ LLVMValueRef emit_node(LLVM_Emit_Context *ctx, AST *node) {
     return emit_function_call(ctx, node);
   case AST_NODE_BLOCK:
     return emit_block(ctx, node);
+  case AST_NODE_BINARY_EXPRESSION:
+    return emit_binary_expression(ctx, node);
   default:
     fprintf(stderr, "Unknown AST node kind: %d\n", node->kind);
+    exit(1);
+  }
+}
+
+LLVMValueRef emit_binary_expression(LLVM_Emit_Context *ctx, AST *node) {
+  LLVMValueRef left = emit_node(ctx, node->binary_expression.left);
+  LLVMValueRef right = emit_node(ctx, node->binary_expression.right);
+
+  switch (node->binary_expression.operator) {
+  case TOKEN_ADD:
+    return LLVMBuildAdd(ctx->builder, left, right, "addtmp");
+  case TOKEN_SUB:
+    return LLVMBuildSub(ctx->builder, left, right, "subtmp");
+  case TOKEN_MUL:
+    return LLVMBuildMul(ctx->builder, left, right, "multmp");
+  case TOKEN_DIV:
+    return LLVMBuildSDiv(ctx->builder, left, right, "divtmp");
+  case TOKEN_MOD:
+    return LLVMBuildSRem(ctx->builder, left, right, "modtmp");
+  case TOKEN_AND:
+    return LLVMBuildAnd(ctx->builder, left, right, "andtmp");
+  case TOKEN_OR:
+    return LLVMBuildOr(ctx->builder, left, right, "ortmp");
+  case TOKEN_XOR:
+    return LLVMBuildXor(ctx->builder, left, right, "xortmp");
+  case TOKEN_SHL:
+    return LLVMBuildShl(ctx->builder, left, right, "shltmp");
+  case TOKEN_SHR:
+    return LLVMBuildLShr(ctx->builder, left, right, "shrtmp");
+  case TOKEN_EQ:
+    return LLVMBuildICmp(ctx->builder, LLVMIntEQ, left, right, "eqtmp");
+  case TOKEN_NEQ:
+    return LLVMBuildICmp(ctx->builder, LLVMIntNE, left, right, "neqtmp");
+  case TOKEN_LT:
+    return LLVMBuildICmp(ctx->builder, LLVMIntSLT, left, right, "lttmp");
+  case TOKEN_GT:
+    return LLVMBuildICmp(ctx->builder, LLVMIntSGT, left, right, "gttmp");
+  case TOKEN_LTE:
+    return LLVMBuildICmp(ctx->builder, LLVMIntSLE, left, right, "ltetmp");
+  case TOKEN_GTE:
+    return LLVMBuildICmp(ctx->builder, LLVMIntSGE, left, right, "gtetmp");
+  default:
+    fprintf(stderr, "Unknown binary operator: %d\n",
+            node->binary_expression.operator);
     exit(1);
   }
 }

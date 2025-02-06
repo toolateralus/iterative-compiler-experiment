@@ -1,9 +1,9 @@
+fn main() @entry {
+  i32 n1 = 10;
+  i32 n = 200 + 2 * n1;
+  printf("n = %d, n1 = %d\n", n, n1);
+}
+
 type Vector_2(i32 x, i32 y, i32 z, i32 w);
 
 fn printf(String, ...) @extern;
-
-fn main() @entry {
-  Vector_2 vector;
-  i32 n = 225;
-  printf("n = %d, vector.x = %d, vector.y = %d\n", n, vector.x, vector.y);
-}

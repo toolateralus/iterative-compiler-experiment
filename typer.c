@@ -192,6 +192,28 @@ Typer_Progress typer_function_call(AST *node) {
   return COMPLETE;
 }
 
+Typer_Progress typer_binary_expression(AST *node) {
+  if (node->typing_complete)
+    return COMPLETE;
+
+  Typer_Progress left_progress = typer_resolve(node->binary_expression.left);
+  if (left_progress != COMPLETE)
+    return UNRESOLVED;
+
+  Typer_Progress right_progress = typer_resolve(node->binary_expression.right);
+  if (right_progress != COMPLETE)
+    return UNRESOLVED;
+
+  if (node->binary_expression.left->type != node->binary_expression.right->type) {
+    fprintf(stderr, "invalid types in binary expression\n");
+    exit(1);
+  }
+
+  node->type = node->binary_expression.left->type;
+  node->typing_complete = true;
+  return COMPLETE;
+}
+
 Typer_Progress typer_block(AST *node) {
   if (node->typing_complete)
     return COMPLETE;

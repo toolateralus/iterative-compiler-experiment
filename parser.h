@@ -19,6 +19,7 @@ typedef enum {
   AST_NODE_DOT_EXPRESSION,
   AST_NODE_FUNCTION_CALL,
   AST_NODE_BLOCK,
+  AST_NODE_BINARY_EXPRESSION,
 } AST_Node_Kind;
 
 static const char *Node_Kind_String[] = {
@@ -108,6 +109,12 @@ typedef struct AST {
       struct AST *right;
     } assignment;
 
+    struct {
+      AST *left;
+      AST *right;
+      Token_Type operator;
+    } binary_expression;
+
     AST_List statements;
 
     String string;
@@ -174,7 +181,7 @@ AST *parse_block(AST_Arena *arena, Lexer_State *state, AST *parent);
 AST *parse_expression(AST_Arena *arena, Lexer_State *state, AST *parent);
 AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state, AST *parent);
 AST *parse_type_declaration(AST_Arena *arena, Lexer_State *state, AST *parent);
-
+AST *parse_binary_expression(AST_Arena *arena, Lexer_State *state, AST *parent);
 #define ast_list_push(list, node) do { \
   if ((list)->length >= (list)->capacity) { \
     (list)->capacity = (list)->capacity ? (list)->capacity * 4 : 1; \

@@ -1,4 +1,5 @@
 #include "backend.h"
+#include "core.h"
 #include "parser.h"
 #include "typer.h"
 #include <stdio.h>
@@ -7,6 +8,8 @@
 size_t address = 0;
 Type type_table[1024] = {0};
 size_t type_table_length = 0;
+
+Compilation_Mode COMPILATION_MODE = CM_DEBUG;
 
 void type_check_program(AST program) {
   initialize_type_system();
@@ -53,6 +56,12 @@ void parse_program(Lexer_State *state, AST_Arena *arena, AST *program) {
 
 
 int main(int argc, char *argv[]) {
+  if (argc > 1) {
+    if (strncmp(argv[1], "-r", 2) == 0) {
+      COMPILATION_MODE = CM_RELEASE;
+    }
+  }
+  
   Lexer_State state;
   lexer_state_read_file(&state, "max.it");
   AST_Arena arena = {0};

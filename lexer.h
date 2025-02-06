@@ -50,40 +50,20 @@ typedef enum {
 } Token_Type;
 
 static const char *Token_Type_Name(Token_Type type) {
-  switch (type) {
-  case TOKEN_EOF_OR_INVALID:
-    return "TOKEN_EOF_OR_INVALID";
-  case TOKEN_IDENTIFIER:
-    return "TOKEN_IDENTIFIER";
-  case TOKEN_STRING:
-    return "TOKEN_STRING";
-  case TOKEN_NUMBER:
-    return "TOKEN_NUMBER";
-  case TOKEN_FN_KEYWORD:
-    return "TOKEN_FN_KEYWORD";
-  case TOKEN_TYPE_KEYWORD:
-    return "TOKEN_TYPE_KEYWORD";
-  case TOKEN_AT:
-    return "TOKEN_AT";
-  case TOKEN_DOT:
-    return "TOKEN_DOT";
-  case TOKEN_COMMA:
-    return "TOKEN_COMMA";
-  case TOKEN_ASSIGN:
-    return "TOKEN_ASSIGN";
-  case TOKEN_SEMICOLON:
-    return "TOKEN_SEMICOLON";
-  case TOKEN_OPEN_PAREN:
-    return "TOKEN_OPEN_PAREN";
-  case TOKEN_CLOSE_PAREN:
-    return "TOKEN_CLOSE_PAREN";
-  case TOKEN_OPEN_CURLY:
-    return "TOKEN_OPEN_CURLY";
-  case TOKEN_CLOSE_CURLY:
-    return "TOKEN_CLOSE_CURLY";
-  default:
+  static const char *token_type_names[] = {
+      "TOKEN_EOF_OR_INVALID", "TOKEN_IDENTIFIER", "TOKEN_STRING", "TOKEN_NUMBER",
+      "TOKEN_FN_KEYWORD", "TOKEN_TYPE_KEYWORD", "TOKEN_AT", "TOKEN_DOT",
+      "TOKEN_COMMA", "TOKEN_ASSIGN", "TOKEN_SEMICOLON", "TOKEN_OPEN_PAREN",
+      "TOKEN_CLOSE_PAREN", "TOKEN_OPEN_CURLY", "TOKEN_CLOSE_CURLY", "TOKEN_ADD",
+      "TOKEN_SUB", "TOKEN_DIV", "TOKEN_MUL", "TOKEN_MOD", "TOKEN_AND",
+      "TOKEN_OR", "TOKEN_XOR", "TOKEN_SHL", "TOKEN_SHR", "TOKEN_EQ",
+      "TOKEN_NEQ", "TOKEN_LOGICAL_NOT", "TOKEN_LOGICAL_OR", "TOKEN_LT",
+      "TOKEN_GT", "TOKEN_GTE", "TOKEN_LTE"};
+
+  if (type < 0 || type >= sizeof(token_type_names) / sizeof(token_type_names[0])) {
     return "UNKNOWN_TOKEN";
   }
+  return token_type_names[type];
 }
 
 typedef struct Source_Location {
@@ -171,7 +151,85 @@ static Operator operator_map[] = {
     {"@", TOKEN_AT},          {"=", TOKEN_ASSIGN},      {",", TOKEN_COMMA},
     {")", TOKEN_CLOSE_PAREN}, {"}", TOKEN_CLOSE_CURLY}, {".", TOKEN_DOT},
     {";", TOKEN_SEMICOLON},   {"(", TOKEN_OPEN_PAREN},  {"{", TOKEN_OPEN_CURLY},
+    {"+", TOKEN_ADD},         {"-", TOKEN_SUB},         {"/", TOKEN_DIV},
+    {"*", TOKEN_MUL},         {"%", TOKEN_MOD},         {"&", TOKEN_AND},
+    {"|", TOKEN_OR},          {"^", TOKEN_XOR},         {"<<", TOKEN_SHL},
+    {">>", TOKEN_SHR},        {"==", TOKEN_EQ},         {"!=", TOKEN_NEQ},
+    {"!", TOKEN_LOGICAL_NOT}, {"||", TOKEN_LOGICAL_OR}, {"<", TOKEN_LT},
+    {">", TOKEN_GT},          {">=", TOKEN_GTE},        {"<=", TOKEN_LTE},
 };
+
+static bool is_binary_operator(Token_Type operator) {
+  switch (operator) {
+    case TOKEN_ADD:
+    case TOKEN_SUB:
+    case TOKEN_DIV:
+    case TOKEN_MUL:
+    case TOKEN_MOD:
+    case TOKEN_AND:
+    case TOKEN_OR:
+    case TOKEN_XOR:
+    case TOKEN_SHL:
+    case TOKEN_SHR:
+    case TOKEN_EQ:
+    case TOKEN_NEQ:
+    case TOKEN_LT:
+    case TOKEN_GT:
+    case TOKEN_GTE:
+    case TOKEN_LTE:
+      return true;
+    default:
+      return false;
+  }
+}
+
+typedef enum {
+  OPERATOR_PRECEDENCE_LOWEST,
+  OPERATOR_PRECEDENCE_ASSIGNMENT,
+  OPERATOR_PRECEDENCE_LOGICAL_OR,
+  OPERATOR_PRECEDENCE_LOGICAL_AND,
+  OPERATOR_PRECEDENCE_EQUALITY,
+  OPERATOR_PRECEDENCE_RELATIONAL,
+  OPERATOR_PRECEDENCE_ADDITIVE,
+  OPERATOR_PRECEDENCE_MULTIPLICATIVE,
+  OPERATOR_PRECEDENCE_UNARY,
+  OPERATOR_PRECEDENCE_HIGHEST
+} Operator_Precedence;
+
+static Operator_Precedence get_operator_precedence(Token_Type operator) {
+  switch (operator) {
+    case TOKEN_ASSIGN:
+      return OPERATOR_PRECEDENCE_ASSIGNMENT;
+    case TOKEN_LOGICAL_OR:
+      return OPERATOR_PRECEDENCE_LOGICAL_OR;
+    case TOKEN_LOGICAL_NOT:
+      return OPERATOR_PRECEDENCE_LOGICAL_AND;
+    case TOKEN_EQ:
+    case TOKEN_NEQ:
+      return OPERATOR_PRECEDENCE_EQUALITY;
+    case TOKEN_LT:
+    case TOKEN_GT:
+    case TOKEN_GTE:
+    case TOKEN_LTE:
+      return OPERATOR_PRECEDENCE_RELATIONAL;
+    case TOKEN_ADD:
+    case TOKEN_SUB:
+      return OPERATOR_PRECEDENCE_ADDITIVE;
+    case TOKEN_MUL:
+    case TOKEN_DIV:
+    case TOKEN_MOD:
+      return OPERATOR_PRECEDENCE_MULTIPLICATIVE;
+    case TOKEN_AND:
+    case TOKEN_OR:
+    case TOKEN_XOR:
+    case TOKEN_SHL:
+    case TOKEN_SHR:
+      return OPERATOR_PRECEDENCE_UNARY;
+    default:
+      return OPERATOR_PRECEDENCE_LOWEST;
+  }
+}
+
 
 typedef struct Keyword {
   const char *key;

@@ -17,6 +17,7 @@ Typer_Progress typer_variable_declaration(AST *node);
 Typer_Progress typer_assignment(AST *node);
 Typer_Progress typer_dot_expression(AST *node);
 Typer_Progress typer_function_call(AST *node);
+Typer_Progress typer_binary_expression(AST *node);
 Typer_Progress typer_block(AST *node);
 
 static inline Typer_Progress typer_resolve(AST *node) {
@@ -39,6 +40,8 @@ static inline Typer_Progress typer_resolve(AST *node) {
     return typer_dot_expression(node);
   case AST_NODE_FUNCTION_CALL:
     return typer_function_call(node);
+  case AST_NODE_BINARY_EXPRESSION: 
+    return typer_binary_expression(node);
   case AST_NODE_PROGRAM:
   case AST_NODE_BLOCK:
     return typer_block(node);
