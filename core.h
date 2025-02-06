@@ -25,7 +25,8 @@ typedef struct {
   int length;
 } String;
 static String String_new(char *data, int length) {
-  String string = {.data = malloc(sizeof(char) * (length + 1)), .length = length};
+  String string = {.data = malloc(sizeof(char) * (length + 1)),
+                   .length = length};
   memcpy(string.data, data, length * sizeof(char));
   string.data[length] = '\0'; // Null-terminate the string
   return string;
@@ -78,5 +79,66 @@ static bool Strings_compare(String a, String b) {
     PRINT_TIME(label, time_sec);                                               \
   } while (0)
 
-  
+typedef struct {
+  void *data;
+  size_t element_size;
+  size_t length;
+  size_t capacity;
+} Vector;
+
+static void vector_init(Vector *vector, size_t element_size) {
+  vector->data = NULL;
+  vector->element_size = element_size;
+  vector->length = 0;
+  vector->capacity = 0;
+}
+
+static void vector_free(Vector *vector) {
+  if (vector->data) {
+    free(vector->data);
+  }
+}
+
+static void vector_resize(Vector *vector, size_t new_capacity) {
+  vector->data = realloc(vector->data, new_capacity * vector->element_size);
+  if (vector->element_size == 0) {
+    panic("Vector was uninitialized");
+  }
+  if (!vector->data) {
+    panic("Failed to allocate memory for vector");
+  }
+  vector->capacity = new_capacity;
+}
+
+static void vector_push(Vector *vector, void *element) {
+  if (vector->length == vector->capacity) {
+    size_t new_capacity = vector->capacity == 0 ? 1 : vector->capacity * 2;
+    vector_resize(vector, new_capacity);
+  }
+  memcpy((char *)vector->data + vector->length * vector->element_size, element,
+         vector->element_size);
+  vector->length++;
+}
+
+#define ForEachPtr(type, var, list, block) \
+  {for (int i = 0; i < list.length; ++i) { type *var = V_PTR_AT(type, list, i); block }}
+
+#define ForEach(type, var, list, block) \
+  {for (int i = 0; i < list.length; ++i) { type var = V_AT(type, list, i); block }}
+
+
+#define V_PTR_AT(type, vector, index) \
+  ((type*)vector_get(&vector, index))
+
+
+#define V_AT(type, vector, index) \
+  (*(type*)vector_get(&vector, index))
+
+static void *vector_get(Vector *vector, size_t index) {
+  if (index >= vector->length) {
+    panic("Index out of bounds");
+  }
+  return (char *)vector->data + index * vector->element_size;
+}
+
 #endif

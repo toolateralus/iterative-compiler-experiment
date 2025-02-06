@@ -33,13 +33,13 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state, AST *parent) {
 
     if (next_token.type == TOKEN_OPEN_PAREN) { // Parse function calls
       AST *call_node = ast_arena_alloc(arena, AST_NODE_FUNCTION_CALL);
+      vector_init(&call_node->function_call.arguments, sizeof(AST*));
       call_node->function_call.name = token.value;
       call_node->parent = parent;
       token_eat(state); // Consume '('
       while (token_peek(state).type != TOKEN_CLOSE_PAREN) {
-        call_node->function_call
-            .arguments[call_node->function_call.arguments_length++] =
-            parse_expression(arena, state, call_node);
+        AST *arg = parse_expression(arena, state, call_node);
+        vector_push(&call_node->function_call.arguments, &arg);
         if (token_peek(state).type != TOKEN_CLOSE_PAREN) {
           token_expect(state, TOKEN_COMMA);
         }
@@ -98,6 +98,7 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state,
   token_expect(state, TOKEN_FN_KEYWORD);
   String name = token_expect(state, TOKEN_IDENTIFIER).value;
   AST *node = ast_arena_alloc(arena, AST_NODE_FUNCTION_DECLARATION);
+  vector_init(&node->function_declaration.parameters, sizeof(AST_Parameter));
   node->function_declaration.is_entry = false;
   node->function_declaration.is_extern = false;
   node->function_declaration.name = name;
@@ -120,8 +121,7 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state,
       }
     }
 
-    node->function_declaration
-        .parameters[node->function_declaration.parameters_length++] = param;
+    vector_push(&node->function_declaration.parameters, &param);
 
     if (token_peek(state).type != TOKEN_CLOSE_PAREN) {
       token_expect(state, TOKEN_COMMA);
@@ -152,17 +152,18 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state,
 AST *parse_type_declaration(AST_Arena *arena, Lexer_State *state, AST *parent) {
   token_expect(state, TOKEN_TYPE_KEYWORD);
   AST *node = ast_arena_alloc(arena, AST_NODE_TYPE_DECLARATION);
+  vector_init(&node->type_declaration.members, sizeof(AST_Type_Member));
   String name = token_expect(state, TOKEN_IDENTIFIER).value;
   node->parent = parent;
   token_expect(state, TOKEN_OPEN_PAREN);
-
   node->type_declaration.name = name;
   while (token_peek(state).type != TOKEN_CLOSE_PAREN) {
     AST_Type_Member member;
     member.type = token_expect(state, TOKEN_IDENTIFIER).value;
     member.name = token_expect(state, TOKEN_IDENTIFIER).value;
-    node->type_declaration.members[node->type_declaration.members_length++] =
-        member;
+
+    vector_push(&node->type_declaration.members, &member);
+
     if (token_peek(state).type != TOKEN_CLOSE_PAREN) {
       token_expect(state, TOKEN_COMMA);
     }

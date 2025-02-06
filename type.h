@@ -22,50 +22,52 @@ typedef enum {
 
 typedef struct AST AST;
 typedef struct Type {
+  String name;
   AST *declaring_node;
   Type_Kind kind;
-  String name;
-  Type_Member members[12];
-  size_t members_length;
+  Vector members;
   size_t size;
-  size_t alignment;
-
   LLVMTypeRef llvm_type;
 } Type;
-
 
 extern Type type_table[1024];
 extern size_t type_table_length;
 
 static size_t get_alignment(Type_Kind kind) {
   switch (kind) {
-    case VOID: return 1;
-    case I32: return 4;
-    case STRING: return sizeof(void*); // Assuming pointers for strings
-    case STRUCT: return 1; // Default, will be updated based on members
-    default: return 1;
+  case VOID:
+    return 1;
+  case I32:
+    return 4;
+  case STRING:
+    return sizeof(void *); // Assuming pointers for strings
+  case STRUCT:
+    return 1; // Default, will be updated based on members
+  default:
+    return 1;
   }
 }
 
-static Type *create_type(AST *declaring_node, String name, Type_Kind kind, size_t size) {
+static Type *create_type(AST *declaring_node, String name, Type_Kind kind,
+                         size_t size) {
   type_table[type_table_length] = (Type){
       .name = name,
       .declaring_node = declaring_node,
-      .alignment = get_alignment(kind),
       .kind = kind,
       .size = size,
   };
   Type *type = &type_table[type_table_length];
+  vector_init(&type->members, sizeof(Type_Member));
   type_table_length++;
   return type;
 }
 
-static int8_t get_member_index(Type *type, String member) {
-  for (int i = 0; i < type->members_length; ++i) {
-    if (Strings_compare(type->members[i].name, member)) {
+static int8_t get_member_index(Type *type, String member_name) {
+  ForEach(Type_Member, member, type->members, {
+    if (Strings_compare(member.name, member_name)) {
       return i;
     }
-  }
+  });
   return -1;
 }
 
@@ -79,11 +81,16 @@ static Type *find_type(String name) {
 }
 
 static Type_Member *find_member(Type *type, String name) {
-  for (int i = 0; i < type->members_length; ++i) {
-    if (Strings_compare(type->members[i].name, name)) {
-      return &type->members[i];
+  {
+    for (int i = 0; i < type->members.length; ++i) {
+      Type_Member *member = ((Type_Member *)vector_get(&type->members, i));
+      {
+        if (Strings_compare(member->name, name)) {
+          return member;
+        }
+      }
     }
-  }
+  };
   return nullptr;
 }
 

@@ -1,4 +1,5 @@
 #include "backend.h"
+#include "core.h"
 #include "parser.h"
 #include "type.h"
 #include <llvm-c/Core.h>
@@ -34,11 +35,12 @@ LLVMTypeRef to_llvm_type(LLVM_Emit_Context *ctx, Type *type) {
   // TODO: add option for packed struct?
   case STRUCT: {
     type->llvm_type = LLVMStructCreateNamed(ctx->context, type->name.data);
-    LLVMTypeRef elements[type->members_length];
-    for (int i = 0; i < type->members_length; ++i) {
-      elements[i] = to_llvm_type(ctx, type->members[i].type);
-    }
-    LLVMStructSetBody(type->llvm_type, elements, type->members_length, false);
+
+    LLVMTypeRef elements[type->members.length];
+    ForEach(Type_Member, member, type->members, {
+      elements[i] = to_llvm_type(ctx, member.type);
+    });
+    LLVMStructSetBody(type->llvm_type, elements, type->members.length, false);
     return type->llvm_type;
   };
   }
@@ -49,7 +51,7 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
   ctx->builder = LLVMCreateBuilderInContext(ctx->context);
   ctx->module = LLVMModuleCreateWithNameInContext("program", ctx->context);
   ctx->debug_info = LLVMCreateDIBuilder(ctx->module);
-  
+
   LLVMInitializeNativeTarget();
   LLVMInitializeNativeAsmPrinter();
   LLVMInitializeNativeAsmParser();
@@ -125,20 +127,21 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
 LLVMValueRef emit_forward_declaration(LLVM_Emit_Context *ctx, AST *node) {
   LLVMTypeRef return_type = LLVMVoidTypeInContext(ctx->context);
   LLVMTypeRef *param_types = NULL;
-  size_t parameters_length = node->function_declaration.parameters_length;
+  size_t parameters_length = node->function_declaration.parameters.length;
   bool is_varargs = false;
 
   if (parameters_length > 0) {
     param_types =
         (LLVMTypeRef *)malloc(sizeof(LLVMTypeRef) * parameters_length);
     for (int i = 0; i < parameters_length; ++i) {
-      if (node->function_declaration.parameters[i].is_varargs) {
+      AST_Parameter parameter = V_AT(AST_Parameter, node->function_declaration.parameters, i);
+      if (parameter.is_varargs) {
         is_varargs = true;
         parameters_length--;
         break;
       } else {
         param_types[i] = to_llvm_type(
-            ctx, find_type(node->function_declaration.parameters[i].type));
+            ctx, find_type(parameter.type));
       }
     }
   }
@@ -175,12 +178,12 @@ LLVMValueRef emit_function_declaration(LLVM_Emit_Context *ctx, AST *node) {
 LLVMValueRef emit_function_call(LLVM_Emit_Context *ctx, AST *node) {
   Symbol *symbol = find_symbol(node, node->function_call.name);
   LLVMValueRef function = symbol->llvm_value;
-  LLVMValueRef args[node->function_call.arguments_length];
-  for (int i = 0; i < node->function_call.arguments_length; ++i) {
-    args[i] = emit_node(ctx, node->function_call.arguments[i]);
+  LLVMValueRef args[node->function_call.arguments.length];
+  for (int i = 0; i < node->function_call.arguments.length; ++i) {
+    args[i] = emit_node(ctx, V_AT(AST*, node->function_call.arguments, i));
   }
   return LLVMBuildCall2(ctx->builder, symbol->llvm_function_type, function,
-                        args, node->function_call.arguments_length, "");
+                        args, node->function_call.arguments.length, "");
 }
 
 LLVMValueRef emit_type_declaration(LLVM_Emit_Context *ctx, AST *node) {

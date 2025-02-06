@@ -75,8 +75,7 @@ typedef struct AST {
     struct {
       String name;
       bool is_extern, is_entry;
-      AST_Parameter parameters[4];
-      size_t parameters_length;
+      Vector parameters;
       struct AST *block;
     } function_declaration;
 
@@ -88,14 +87,12 @@ typedef struct AST {
 
     struct {
       String name;
-      struct AST *arguments[4];
-      size_t arguments_length;
+      Vector arguments;
     } function_call;
 
     struct {
       String name;
-      AST_Type_Member members[4];
-      size_t members_length;
+      Vector members;
     } type_declaration;
 
     struct {

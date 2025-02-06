@@ -62,6 +62,10 @@ static const char *Token_Type_Name(Token_Type type) {
   }
 }
 
+typedef struct Source_Location {
+  int line, column, file;
+} Source_Location;
+
 typedef struct {
   Token_Type type;
   String value;

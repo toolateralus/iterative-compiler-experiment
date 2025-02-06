@@ -39,20 +39,16 @@ Typer_Progress typer_function_declaration(AST *node) {
     return COMPLETE;
 
   // Resolve parameter types
-  for (size_t i = 0; i < node->function_declaration.parameters_length; ++i) {
-    AST_Parameter *parameter = &node->function_declaration.parameters[i];
-    if (parameter->is_varargs) {
+  for (size_t i = 0; i < node->function_declaration.parameters.length; ++i) {
+    AST_Parameter *parameter =
+        V_PTR_AT(AST_Parameter, node->function_declaration.parameters, i);
+    if (parameter->is_varargs)
       continue;
-    }
-
     Type *param_type = find_type(parameter->type);
-
     if (!param_type)
       return UNRESOLVED;
-
     if (node->function_declaration.is_extern)
       continue;
-
     insert_symbol(node, parameter->name, node, param_type);
   }
 
@@ -74,23 +70,19 @@ Typer_Progress typer_type_declaration(AST *node) {
   if (node->typing_complete)
     return COMPLETE;
 
-  // Resolve member types
-  for (size_t i = 0; i < node->type_declaration.members_length; ++i) {
-    Type *member_type = find_type(node->type_declaration.members[i].type);
-    if (!member_type)
-      return UNRESOLVED;
-    insert_symbol(node, node->type_declaration.members[i].name, node,
-                  member_type);
-  }
   Type *type = create_type(node, node->type_declaration.name, STRUCT, 0);
 
-  for (size_t i = 0; i < node->type_declaration.members_length; ++i) {
-    Type *member_type = find_type(node->type_declaration.members[i].type);
-    type->members[i].name = node->type_declaration.members[i].name;
-    type->members[i].type = member_type;
-    type->members_length++;
-  }
-  
+  ForEach(AST_Type_Member, member, node->type_declaration.members, {
+    Type *member_type = find_type(member.type);
+    if (!member_type)
+      return UNRESOLVED;
+    insert_symbol(node, member.name, node, member_type);
+    Type_Member type_member;
+    type_member.name = member.name;
+    type_member.type = member_type;
+    vector_push(&type->members, &type_member);
+  });
+
   node->type = &type_table[VOID];
   node->typing_complete = true;
   return COMPLETE;
@@ -188,9 +180,9 @@ Typer_Progress typer_function_call(AST *node) {
   if (!symbol)
     return UNRESOLVED;
 
-  for (size_t i = 0; i < node->function_call.arguments_length; ++i) {
+  for (size_t i = 0; i < node->function_call.arguments.length; ++i) {
     Typer_Progress arg_progress =
-        typer_resolve(node->function_call.arguments[i]);
+        typer_resolve(V_AT(AST *, node->function_call.arguments, i));
     if (arg_progress != COMPLETE)
       return UNRESOLVED;
   }
