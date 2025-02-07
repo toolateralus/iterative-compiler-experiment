@@ -13,6 +13,7 @@ typedef struct LLVM_Emit_Context {
   LLVMTargetRef target;
   LLVMTargetDataRef target_data;
   bool dont_load;
+  LLVMMetadataRef scope;
 } LLVM_Emit_Context;
 
 

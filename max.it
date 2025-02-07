@@ -1,5 +1,6 @@
 fn main() @entry {
   Vector_2 output;
+  printf("Xaryu Was Here\n");
   output.x = 0;
   output.y = 10;
   printf("%d :: %d\n", output.x, output.y);

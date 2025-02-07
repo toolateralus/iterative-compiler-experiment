@@ -24,10 +24,11 @@ static void print_value(LLVMValueRef value) {
 
 // Be very careful using this macro, it can't have do { } while(0) semantic because
 // it's very likely to be used to declare some variables.
-#define DONT_LOAD(ctx, block)                                                  \
+#define DONT_LOAD(old_state, ctx, block)                                                  \
+  bool old_state = ctx->dont_load;\
   ctx->dont_load = true;                                                       \
   block                                                                        \
-  ctx->dont_load = false;
+  ctx->dont_load = old_state;
 
 LLVMTypeRef to_llvm_type(LLVM_Emit_Context *ctx, Type *type) {
   if (type->llvm_type)
@@ -132,9 +133,7 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
     }
     LLVMDisposePassBuilderOptions(options);
   }
-
-  LLVMDIBuilderFinalize(ctx->debug_info);
-
+  
   char *error;
   if (LLVMPrintModuleToFile(ctx->module, "generated/output.ll", &error)) {
     printf("%s\n", error);
@@ -343,11 +342,12 @@ LLVMValueRef emit_variable_declaration(LLVM_Emit_Context *ctx, AST *node) {
 }
 
 LLVMValueRef emit_dot_expression(LLVM_Emit_Context *ctx, AST *node) {
-  DONT_LOAD(ctx, 
+  DONT_LOAD(old_state, ctx, 
     LLVMValueRef left = emit_node(ctx, node->dot.left);
   )
   Type *left_type = get_type(node->dot.left->type);
   size_t member_index = get_member_index(left_type, node->dot.member_name);
+  Type *member_type = get_type(V_AT(Type_Member, left_type->$struct.members, member_index).type);
   LLVMValueRef gep =
       LLVMBuildStructGEP2(ctx->builder, to_llvm_type(ctx, left_type), left,
                           member_index, "dotexpr");
@@ -356,65 +356,18 @@ LLVMValueRef emit_dot_expression(LLVM_Emit_Context *ctx, AST *node) {
   if (ctx->dont_load) {
     return gep;
   } else {
-    LLVMTypeRef llvm_type = to_llvm_type(ctx, left_type);
-    return LLVMBuildLoad2(ctx->builder, LLVMPointerType(llvm_type, 0), gep,
-                          "load_dot_expr");
+    LLVMTypeRef llvm_member_type = to_llvm_type(ctx, member_type);
+    return LLVMBuildLoad2(ctx->builder, llvm_member_type, gep, "load_dot_expr");
   }
 }
 
-LLVMValueRef emit_block(LLVM_Emit_Context *ctx, AST *node) {
-  for (int i = 0; i < node->statements.length; ++i) {
-    emit_node(ctx, node->statements.data[i]);
-  }
-  return nullptr;
-}
 
-LLVMValueRef emit_node(LLVM_Emit_Context *ctx, AST *node) {
-  switch (node->kind) {
-  case AST_NODE_PROGRAM:
-    return emit_program(ctx, node);
-  case AST_NODE_IDENTIFIER:
-    return emit_identifier(ctx, node);
-  case AST_NODE_NUMBER:
-    return emit_number(ctx, node);
-  case AST_NODE_STRING:
-    return emit_string(ctx, node);
-  case AST_NODE_FUNCTION_DECLARATION:
-    return emit_function_declaration(ctx, node);
-  case AST_NODE_TYPE_DECLARATION:
-    return emit_type_declaration(ctx, node);
-  case AST_NODE_VARIABLE_DECLARATION:
-    return emit_variable_declaration(ctx, node);
-  case AST_NODE_DOT_EXPRESSION:
-    return emit_dot_expression(ctx, node);
-  case AST_NODE_FUNCTION_CALL:
-    return emit_function_call(ctx, node);
-  case AST_NODE_BLOCK:
-    return emit_block(ctx, node);
-  case AST_NODE_BINARY_EXPRESSION:
-    return emit_binary_expression(ctx, node);
-  case AST_NODE_RETURN:
-    return emit_return_statement(ctx, node);
-  default:
-    fprintf(stderr, "Unknown AST node kind: %d\n", node->kind);
-    exit(1);
-  }
-}
-
-LLVMValueRef emit_return_statement(LLVM_Emit_Context *ctx, AST *node) {
-  if (node->$return) {
-    LLVMBuildRet(ctx->builder, emit_node(ctx, node->$return));
-  } else {
-    LLVMBuildRetVoid(ctx->builder);
-  }
-  return nullptr;
-}
 
 LLVMValueRef emit_binary_expression(LLVM_Emit_Context *ctx, AST *node) {
   if (node->binary.operator == TOKEN_ASSIGN) {
-    DONT_LOAD(ctx,
+    DONT_LOAD(old_state, ctx, 
       LLVMValueRef left = emit_node(ctx, node->binary.left);
-    );
+    )    
     LLVMValueRef right = emit_node(ctx, node->binary.right);
     LLVMBuildStore(ctx->builder, right, left);
     return nullptr;
@@ -458,6 +411,54 @@ LLVMValueRef emit_binary_expression(LLVM_Emit_Context *ctx, AST *node) {
     return LLVMBuildICmp(ctx->builder, LLVMIntSGE, left, right, "gtetmp");
   default:
     fprintf(stderr, "Unknown binary operator: %d\n", node->binary.operator);
+    exit(1);
+  }
+}
+
+LLVMValueRef emit_return_statement(LLVM_Emit_Context *ctx, AST *node) {
+  if (node->$return) {
+    LLVMBuildRet(ctx->builder, emit_node(ctx, node->$return));
+  } else {
+    LLVMBuildRetVoid(ctx->builder);
+  }
+  return nullptr;
+}
+
+LLVMValueRef emit_block(LLVM_Emit_Context *ctx, AST *node) {
+  for (int i = 0; i < node->statements.length; ++i) {
+    emit_node(ctx, node->statements.data[i]);
+  }
+  return nullptr;
+}
+
+LLVMValueRef emit_node(LLVM_Emit_Context *ctx, AST *node) {
+  switch (node->kind) {
+  case AST_NODE_PROGRAM:
+    return emit_program(ctx, node);
+  case AST_NODE_IDENTIFIER:
+    return emit_identifier(ctx, node);
+  case AST_NODE_NUMBER:
+    return emit_number(ctx, node);
+  case AST_NODE_STRING:
+    return emit_string(ctx, node);
+  case AST_NODE_FUNCTION_DECLARATION:
+    return emit_function_declaration(ctx, node);
+  case AST_NODE_TYPE_DECLARATION:
+    return emit_type_declaration(ctx, node);
+  case AST_NODE_VARIABLE_DECLARATION:
+    return emit_variable_declaration(ctx, node);
+  case AST_NODE_DOT_EXPRESSION:
+    return emit_dot_expression(ctx, node);
+  case AST_NODE_FUNCTION_CALL:
+    return emit_function_call(ctx, node);
+  case AST_NODE_BLOCK:
+    return emit_block(ctx, node);
+  case AST_NODE_BINARY_EXPRESSION:
+    return emit_binary_expression(ctx, node);
+  case AST_NODE_RETURN:
+    return emit_return_statement(ctx, node);
+  default:
+    fprintf(stderr, "Unknown AST node kind: %d\n", node->kind);
     exit(1);
   }
 }
