@@ -58,7 +58,7 @@ typedef struct AST_List {
 typedef struct Symbol {
   String name;
   AST *node;
-  Type *type;
+  size_t type;
   struct Symbol *next;
   LLVMValueRef llvm_value;
   LLVMTypeRef llvm_function_type;
@@ -68,7 +68,7 @@ typedef struct AST {
   bool typing_complete;
   bool emitted;
   AST_Node_Kind kind;
-  Type *type;
+  size_t type;
   Symbol symbol_table;
   Source_Location location;
 
@@ -77,7 +77,11 @@ typedef struct AST {
   union {
     struct {
       String name;
-      bool is_extern, is_entry;
+      
+      // todo: add function flags?
+      bool is_extern : 1, 
+           is_entry : 1;
+
       Vector parameters;
       struct AST *block;
     } function_declaration;
@@ -155,7 +159,7 @@ static inline AST *ast_arena_alloc(Lexer_State* state, AST_Arena *arena, AST_Nod
   if (arena->nodes_length < 1024) {
     AST *node = &arena->nodes[arena->nodes_length++];
     node->kind = kind;
-    node->type = nullptr;
+    node->type = 0;
     node->location = state->location;
     return node;
   } else {

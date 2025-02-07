@@ -235,7 +235,9 @@ void insert_symbol(AST *scope, String name, AST *node, Type *type) {
   symbol->next = malloc(sizeof(Symbol));
   symbol->next->name = name;
   symbol->next->node = node;
-  symbol->next->type = type;
+  if (type) {
+    symbol->next->type = type->id;
+  }
   symbol->next->next = NULL; // Initialize the next pointer
 }
 

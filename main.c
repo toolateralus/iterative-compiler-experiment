@@ -6,8 +6,7 @@
 #include <time.h>
 
 size_t address = 0;
-Type type_table[1024] = {0};
-size_t type_table_length = 0;
+Vector type_table;
 
 Compilation_Mode COMPILATION_MODE = CM_DEBUG;
 

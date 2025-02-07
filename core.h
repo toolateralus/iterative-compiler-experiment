@@ -110,6 +110,17 @@ static void vector_resize(Vector *vector, size_t new_capacity) {
   vector->capacity = new_capacity;
 }
 
+#define V_BACK(type, vector) (*(type*)vector_back(&vector))
+
+#define V_PTR_BACK(type, vector) (type*)vector_back(&vector)
+
+static void *vector_back(Vector *vector) {
+  if (vector->length == 0) {
+    panic("Vector is empty");
+  }
+  return (char *)vector->data + (vector->length - 1) * vector->element_size;
+}
+
 static void vector_push(Vector *vector, void *element) {
   if (vector->length == vector->capacity) {
     size_t new_capacity = vector->capacity == 0 ? 1 : vector->capacity * 2;

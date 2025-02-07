@@ -10,18 +10,6 @@
 #include <llvm-c/Transforms/PassBuilder.h>
 #include <llvm-c/Types.h>
 
-/*
-  TODO: maybe we want a string struct that's just null terminated constant.
-  TODO: not sure.
-  LLVMTypeRef string_type = LLVMStructCreateNamed(ctx->context, "String");
-  LLVMTypeRef elements[] = {
-    LLVMPointerType(LLVMIntType(8), 0),   // data,
-    LLVMInt64Type(),                      // length
-  };
-  LLVMStructSetBody(string_type, elements, 2, 0); // last argument is bool:
-  packed.
-*/
-
 LLVMTypeRef to_llvm_type(LLVM_Emit_Context *ctx, Type *type) {
   if (type->llvm_type)
     return type->llvm_type;
@@ -32,17 +20,30 @@ LLVMTypeRef to_llvm_type(LLVM_Emit_Context *ctx, Type *type) {
     return LLVMPointerType(LLVMInt8Type(), 0);
   case I32:
     return LLVMInt32Type();
-
   // TODO: add option for packed struct?
   case STRUCT: {
     type->llvm_type = LLVMStructCreateNamed(ctx->context, type->name.data);
-
-    LLVMTypeRef elements[type->members.length];
-    ForEach(Type_Member, member, type->members,
-            { elements[i] = to_llvm_type(ctx, member.type); });
-    LLVMStructSetBody(type->llvm_type, elements, type->members.length, false);
+    LLVMTypeRef elements[type->$struct.members.length];
+    ForEach(Type_Member, member, type->$struct.members, {
+      elements[i] = to_llvm_type(ctx, V_PTR_AT(Type, type_table, member.type));
+    });
+    LLVMStructSetBody(type->llvm_type, elements, type->$struct.members.length,
+                      false);
     return type->llvm_type;
   };
+  case FUNCTION: {
+    LLVMTypeRef return_type =
+        to_llvm_type(ctx, get_type(type->$function.$return));
+    LLVMTypeRef param_types[type->$function.parameters.length];
+    for (int i = 0; i < type->$function.parameters.length; ++i) {
+      param_types[i] = to_llvm_type(ctx, V_PTR_AT(Type, type_table, i));
+    }
+    type->llvm_type = LLVMFunctionType(
+        return_type, param_types, type->$function.parameters.length, false);
+    return type->llvm_type;
+  }
+  case F32:
+    return LLVMFloatType();
   }
 }
 
@@ -197,17 +198,89 @@ LLVMValueRef emit_type_declaration(LLVM_Emit_Context *ctx, AST *node) {
 
 LLVMValueRef emit_identifier(LLVM_Emit_Context *ctx, AST *node) {
   Symbol *symbol = find_symbol(node, node->identifier);
-  return LLVMBuildLoad2(ctx->builder, to_llvm_type(ctx, symbol->type),
+  auto type = get_type(symbol->type);
+  printf("type: %zu\n", type->id);
+  auto llvm_type = to_llvm_type(ctx, type);
+  printf("llvm type: %p\n", llvm_type);
+  return LLVMBuildLoad2(ctx->builder, llvm_type,
                         symbol->llvm_value, symbol->name.data);
 }
+
 LLVMValueRef emit_number(LLVM_Emit_Context *ctx, AST *node) {
   return LLVMConstInt(LLVMInt32Type(), atoll(node->number.data), false);
 }
 
+// for making string literals with '\escape chars' work.
+static inline char *unescape_string_lit(const char *s) {
+  size_t len = strlen(s);
+  char *res = (char *)malloc(len + 1); // Allocate memory for the result
+  char *dst = res;
+  const char *src = s;
+
+  while (*src) {
+    if (*src == '\\') {
+      src++;
+      switch (*src) {
+      case 'e':
+        *dst++ = '\x1B';
+        break;
+      case 'n':
+        *dst++ = '\n';
+        break;
+      case 't':
+        *dst++ = '\t';
+        break;
+      case 'r':
+        *dst++ = '\r';
+        break;
+      case 'f':
+        *dst++ = '\f';
+        break;
+      case 'v':
+        *dst++ = '\v';
+        break;
+      case 'a':
+        *dst++ = '\a';
+        break;
+      case 'b':
+        *dst++ = '\b';
+        break;
+      case '\\':
+        *dst++ = '\\';
+        break;
+      case '\'':
+        *dst++ = '\'';
+        break;
+      case '\"':
+        *dst++ = '\"';
+        break;
+      case '\?':
+        *dst++ = '\?';
+        break;
+      case '0':
+        *dst++ = '\0';
+        break;
+      default:
+        // If the character following the backslash is not a recognized escape
+        // sequence, append the backslash followed by the character itself.
+        *dst++ = '\\';
+        *dst++ = *src;
+        break;
+      }
+    } else {
+      *dst++ = *src;
+    }
+    src++;
+  }
+  *dst = '\0'; // Null-terminate the result
+  return res;
+}
+
 LLVMValueRef emit_string(LLVM_Emit_Context *ctx, AST *node) {
-  LLVMValueRef str =
-      LLVMBuildGlobalString(ctx->builder, node->string.data, "str");
-  return str;
+  char *encoded_str = unescape_string_lit(node->string.data);
+  LLVMValueRef result = LLVMBuildGlobalString(ctx->builder, encoded_str, "str");
+  free(encoded_str);
+  return result;
 }
 
 LLVMValueRef emit_variable_declaration(LLVM_Emit_Context *ctx, AST *node) {
@@ -240,15 +313,23 @@ LLVMValueRef emit_dot_expression(LLVM_Emit_Context *ctx, AST *node) {
   Symbol *base = find_symbol(node, node->dot_expression.left);
   Symbol *symbol = find_symbol(node, node->dot_expression.right);
   LLVMValueRef gep = LLVMBuildStructGEP2(
-      ctx->builder, to_llvm_type(ctx, base->type), base->llvm_value,
-      get_member_index(base->type, node->dot_expression.right), "dot_expr");
+      ctx->builder, to_llvm_type(ctx, get_type(base->type)), base->llvm_value,
+      get_member_index(get_type(base->type), node->dot_expression.right),
+      "dot_expr");
 
   if (node->dot_expression.assignment_value) {
     LLVMValueRef value = emit_node(ctx, node->dot_expression.assignment_value);
     LLVMBuildStore(ctx->builder, value, gep);
     return value;
   } else {
-    return LLVMBuildLoad2(ctx->builder, LLVMPointerType(to_llvm_type(ctx, node->type), 0), gep, "load_dot_expr");
+    auto type = get_type(symbol->type);
+    printf("type: %zu\n", type->id);
+    auto llvm_type = to_llvm_type(ctx, type);
+    printf("llvm type: %p\n", llvm_type);
+    return LLVMBuildLoad2(
+        ctx->builder,
+        LLVMPointerType(llvm_type, 0), gep,
+        "load_dot_expr");
   }
 }
 

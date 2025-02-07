@@ -2,7 +2,7 @@
 source_filename = "program"
 target triple = "x86_64-pc-linux-gnu"
 
-@str = private unnamed_addr constant [18 x i8] c"n = %d, n1 = %d\\n\00", align 1
+@str = private unnamed_addr constant [24 x i8] c"\1B[1;31mn = %d, n1 = %d\0A\00", align 1
 
 define void @main() {
 entry:
