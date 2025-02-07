@@ -1,17 +1,14 @@
 fn main() @entry {
-  Vector_2 output;
-  printf("Xaryu Was Here\n");
+  Vector_2 output = get_Vector_2();
   output.x = 0;
   output.y = 10;
-  printf("%d :: %d\n", output.x, output.y);
+  output.x = output.x + output.x;
 }
 
-// fn Vector_2_add(Vector_2 a, Vector_2 b) Vector_2 {
-//   Vector_2 output;
-//   output.x = a.x + b.x;
-//   output.y = a.y + b.y;
-//   return output;
-// }
+fn get_Vector_2() Vector_2 {
+  Vector_2 vector;
+  return vector;
+}
 
 type Vector_2(i32 x, i32 y);
 
