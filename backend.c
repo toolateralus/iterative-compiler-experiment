@@ -138,7 +138,7 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
 }
 
 LLVMValueRef emit_forward_declaration(LLVM_Emit_Context *ctx, AST *node) {
-  LLVMTypeRef return_type = LLVMVoidTypeInContext(ctx->context);
+  LLVMTypeRef return_type = to_llvm_type(ctx, find_type(node->function_declaration.return_type));
   LLVMTypeRef *param_types = NULL;
   size_t parameters_length = node->function_declaration.parameters.length;
   bool is_varargs = false;
@@ -183,7 +183,10 @@ LLVMValueRef emit_function_declaration(LLVM_Emit_Context *ctx, AST *node) {
         LLVMAppendBasicBlockInContext(ctx->context, function, "entry");
     LLVMPositionBuilderAtEnd(ctx->builder, entry);
     emit_block(ctx, node->function_declaration.block);
-    LLVMBuildRetVoid(ctx->builder);
+
+    if (strncmp(node->function_declaration.return_type.data, "void", 4) == 0) {
+      LLVMBuildRetVoid(ctx->builder);
+    }
   }
   return nullptr;
 }
@@ -345,9 +348,7 @@ LLVMValueRef emit_dot_expression(LLVM_Emit_Context *ctx, AST *node) {
     return value;
   } else {
     auto type = get_type(symbol->type);
-    printf("type: %zu\n", type->id);
     auto llvm_type = to_llvm_type(ctx, type);
-    printf("llvm type: %p\n", llvm_type);
     return LLVMBuildLoad2(
         ctx->builder,
         LLVMPointerType(llvm_type, 0), gep,
@@ -388,10 +389,21 @@ LLVMValueRef emit_node(LLVM_Emit_Context *ctx, AST *node) {
     return emit_block(ctx, node);
   case AST_NODE_BINARY_EXPRESSION:
     return emit_binary_expression(ctx, node);
+  case AST_NODE_RETURN: 
+    return emit_return_statement(ctx, node);
   default:
     fprintf(stderr, "Unknown AST node kind: %d\n", node->kind);
     exit(1);
   }
+}
+
+LLVMValueRef emit_return_statement(LLVM_Emit_Context *ctx, AST *node) {
+  if (node->$return.value) {
+    LLVMBuildRet(ctx->builder, emit_node(ctx, node->$return.value));
+  } else {
+    LLVMBuildRetVoid(ctx->builder);
+  }
+  return nullptr;
 }
 
 LLVMValueRef emit_binary_expression(LLVM_Emit_Context *ctx, AST *node) {

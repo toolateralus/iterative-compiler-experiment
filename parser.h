@@ -21,6 +21,7 @@ typedef enum {
   AST_NODE_FUNCTION_CALL,
   AST_NODE_BLOCK,
   AST_NODE_BINARY_EXPRESSION,
+  AST_NODE_RETURN,
 } AST_Node_Kind;
 
 static const char *Node_Kind_String[] = {
@@ -77,8 +78,12 @@ typedef struct AST {
 
   union {
     struct {
+      struct AST *value;
+    } $return;
+
+    struct {
       String name;
-      
+      String return_type;
       // todo: add function flags?
       bool is_extern : 1, 
            is_entry : 1;

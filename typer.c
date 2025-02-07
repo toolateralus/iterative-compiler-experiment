@@ -38,18 +38,31 @@ Typer_Progress typer_function_declaration(AST *node) {
   if (node->typing_complete)
     return COMPLETE;
 
-  // Resolve parameter types
+  Vector parameter_types;
+  vector_init(&parameter_types, sizeof(size_t));
+  bool is_varargs = false;
   for (size_t i = 0; i < node->function_declaration.parameters.length; ++i) {
     AST_Parameter *parameter =
         V_PTR_AT(AST_Parameter, node->function_declaration.parameters, i);
-    if (parameter->is_varargs)
+    if (parameter->is_varargs) {
+      is_varargs = true;
       continue;
+    }
+
     Type *param_type = find_type(parameter->type);
+    vector_push(&parameter_types, &param_type->id);
+
     if (!param_type)
       return UNRESOLVED;
     if (node->function_declaration.is_extern)
       continue;
     insert_symbol(node, parameter->name, node, param_type);
+  }
+
+  auto return_ty = find_type(node->function_declaration.return_type);
+
+  if (!return_ty) {
+    return UNRESOLVED;
   }
 
   if (!node->function_declaration.is_extern) {
@@ -60,8 +73,19 @@ Typer_Progress typer_function_declaration(AST *node) {
       return UNRESOLVED;
   }
 
-  insert_symbol(node->parent, node->function_declaration.name, node, nullptr);
-  node->type = VOID;
+
+
+  bool created;
+  Type *type = create_or_find_function_type(node, return_ty->id, parameter_types, is_varargs, &created);
+
+  // If we didn't create this type, we need to clean up these params.
+  // If we did, these now are owned by the type, we just copy the vector.
+  if (!created) {
+    vector_free(&parameter_types);
+  }
+
+  insert_symbol(node->parent, node->function_declaration.name, node, type);
+  node->type = type->id;
   node->typing_complete = true;
   return COMPLETE;
 }
@@ -180,6 +204,17 @@ Typer_Progress typer_function_call(AST *node) {
   if (!symbol)
     return UNRESOLVED;
 
+  Type *type = get_type(symbol->type);
+
+  assert(type->kind == FUNCTION && "Attempted to call a non-function type");
+
+  typeof(type->$function) function_type = type->$function;
+
+  if ((node->function_call.arguments.length != function_type.parameters.length) && !function_type.is_varargs) 
+    parse_panicf(node->location, "expected #%d arguments, got #%d", function_type.parameters.length, node->function_call.arguments.length);
+
+  // TODO: type check arguments,
+  // TODO: the challenge is handling varargs.
   for (size_t i = 0; i < node->function_call.arguments.length; ++i) {
     Typer_Progress arg_progress =
         typer_resolve(V_AT(AST *, node->function_call.arguments, i));
@@ -187,7 +222,7 @@ Typer_Progress typer_function_call(AST *node) {
       return UNRESOLVED;
   }
 
-  node->type = VOID;
+  node->type = type->$function.$return;
   node->typing_complete = true;
   return COMPLETE;
 }
@@ -224,5 +259,12 @@ Typer_Progress typer_block(AST *node) {
       return UNRESOLVED;
   }
   node->typing_complete = true;
+  return COMPLETE;
+}
+
+Typer_Progress typer_return_statement(AST *node) {
+  if (node->$return.value) {
+    return typer_resolve(node->$return.value);
+  }
   return COMPLETE;
 }

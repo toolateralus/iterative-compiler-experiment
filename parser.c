@@ -59,12 +59,10 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state, AST *parent) {
         }
       }
       token_eat(state); // Consume ')'
-      token_expect(state, TOKEN_SEMICOLON);
       return call_node;
     }
 
-    if (next_token.type ==
-        TOKEN_IDENTIFIER) { // Parse variable declarations and assignments.
+    if (next_token.type == TOKEN_IDENTIFIER) { // Parse variable declarations and assignments.
       String type = token.value;
       String name = token_expect(state, TOKEN_IDENTIFIER).value;
       if (token_peek(state).type == TOKEN_ASSIGN) {
@@ -118,6 +116,7 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state,
   node->function_declaration.name = name;
   node->parent = parent;
   token_expect(state, TOKEN_OPEN_PAREN);
+
   while (token_peek(state).type != TOKEN_CLOSE_PAREN) {
     AST_Parameter param = {0};
     if (token_peek(state).type == TOKEN_DOT &&
@@ -142,6 +141,15 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state,
     }
   }
   token_eat(state); // Consume ')'
+
+  if (token_peek(state).type == TOKEN_IDENTIFIER) {
+    node->function_declaration.return_type = token_eat(state).value;
+  } else {
+    node->function_declaration.return_type = (String) {
+      .data = "void",
+      .length = 4
+    };
+  }
 
   while (token_peek(state).type == TOKEN_AT) {
     token_eat(state);
@@ -207,8 +215,22 @@ AST *parse_next_statement(AST_Arena *arena, Lexer_State *state, AST *parent) {
     return nullptr;
 
   switch (token.type) {
+  case TOKEN_RETURN_KEYWORD: {
+    token_eat(state);
+    AST *node = ast_arena_alloc(state, arena, AST_NODE_RETURN);
+    if (token_peek(state).type != TOKEN_SEMICOLON) {
+      node->$return.value = parse_binary_expression(arena, state, parent);
+    }
+    token_expect(state, TOKEN_SEMICOLON);
+    return node;
+  }
+
   case TOKEN_IDENTIFIER: {
-    return parse_expression(arena, state, parent);
+    AST* expr = parse_expression(arena, state, parent);
+    if (expr->kind == AST_NODE_FUNCTION_CALL) {
+      token_expect(state, TOKEN_SEMICOLON);
+    }
+    return expr;
   }
   case TOKEN_FN_KEYWORD: {
     return parse_function_declaration(arena, state, parent);

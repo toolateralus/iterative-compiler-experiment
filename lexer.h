@@ -12,6 +12,7 @@ typedef enum {
 
   TOKEN_FN_KEYWORD,
   TOKEN_TYPE_KEYWORD,
+  TOKEN_RETURN_KEYWORD,
 
   TOKEN_AT,
   TOKEN_DOT,
@@ -239,6 +240,7 @@ typedef struct Keyword {
 static Keyword keyword_map[] = {
     {"fn", TOKEN_FN_KEYWORD},
     {"type", TOKEN_TYPE_KEYWORD},
+    {"return", TOKEN_RETURN_KEYWORD},
 };
 
 static Token get_token(Lexer_State *state) {
