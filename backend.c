@@ -10,6 +10,18 @@
 #include <llvm-c/Transforms/PassBuilder.h>
 #include <llvm-c/Types.h>
 
+static void print_type(LLVMTypeRef type) {
+  char *llvm_type_str = LLVMPrintTypeToString(type);
+  printf("LLVM Type: %s\n", llvm_type_str);
+  LLVMDisposeMessage(llvm_type_str);
+}
+
+static void print_value(LLVMValueRef value) {
+  char *value_str = LLVMPrintValueToString(value);
+  printf("%s\n", value_str);
+  LLVMDisposeMessage(value_str);
+}
+
 LLVMTypeRef to_llvm_type(LLVM_Emit_Context *ctx, Type *type) {
   if (type->llvm_type)
     return type->llvm_type;
@@ -198,12 +210,22 @@ LLVMValueRef emit_type_declaration(LLVM_Emit_Context *ctx, AST *node) {
 
 LLVMValueRef emit_identifier(LLVM_Emit_Context *ctx, AST *node) {
   Symbol *symbol = find_symbol(node, node->identifier);
-  auto type = get_type(symbol->type);
-  printf("type: %zu\n", type->id);
-  auto llvm_type = to_llvm_type(ctx, type);
-  printf("llvm type: %p\n", llvm_type);
+
+  auto llvm_type = to_llvm_type(ctx, get_type(symbol->type));
+
+  LLVMValueRef value = nullptr;
+
+  // TODO: we should probably just do this when we emit a function, not every time we need to look up a parameter.
+  if (symbol->llvm_value == nullptr) {
+    LLVMValueRef function = LLVMGetBasicBlockParent(LLVMGetInsertBlock(ctx->builder));
+    unsigned param_index = get_parameter_index(symbol->node, node->identifier); 
+    return LLVMGetParam(function, param_index);
+  } else {
+    value = symbol->llvm_value;
+  }
+
   return LLVMBuildLoad2(ctx->builder, llvm_type,
-                        symbol->llvm_value, symbol->name.data);
+                        value, symbol->name.data);
 }
 
 LLVMValueRef emit_number(LLVM_Emit_Context *ctx, AST *node) {

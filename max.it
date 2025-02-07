@@ -5,6 +5,10 @@ fn main() @entry {
   printf("\e[1;31mn = %d, n1 = %d\n", n, n1);
 }
 
-# type Vector_2(i32 x, i32 y, i32 z, i32 w);
+type Vector_2(i32 x, i32 y, i32 z, i32 w);
 
 fn printf(String, ...) @extern;
+
+fn add_int(i32 a, i32 b) {
+  i32 result = a + b;
+}

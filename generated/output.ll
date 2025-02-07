@@ -19,3 +19,11 @@ entry:
 }
 
 declare void @printf(ptr, ...)
+
+define void @add_int(i32 %0, i32 %1) {
+entry:
+  %result = alloca i32, align 4
+  %addtmp = add i32 %0, %1
+  store i32 %addtmp, ptr %result, align 4
+  ret void
+}

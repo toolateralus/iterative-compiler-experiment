@@ -2,6 +2,7 @@
 #define PARSER_H
 
 #include "core.h"
+#include <assert.h>
 #include "lexer.h"
 #include "type.h"
 #include <llvm-c/Types.h>
@@ -143,6 +144,17 @@ static void parse_panicf(Source_Location location, const char *format, ...) {
   fprintf(stderr, "\n");
   va_end(args);
   exit(1);
+}
+
+static int64_t get_parameter_index(AST *node, String name) {
+  assert(node->kind == AST_NODE_FUNCTION_DECLARATION && "get_parameter_index called on a non-function node");
+  auto func = node->function_declaration;
+  ForEach(AST_Parameter, param, func.parameters, {
+    if (Strings_compare(name, param.name)) {
+      return i;
+    }
+  });
+  return -1;
 }
 
 Symbol *find_symbol(AST *scope, String name);
