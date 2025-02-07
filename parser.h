@@ -16,7 +16,6 @@ typedef enum {
   AST_NODE_FUNCTION_DECLARATION,
   AST_NODE_TYPE_DECLARATION,
   AST_NODE_VARIABLE_DECLARATION,
-  AST_NODE_ASSIGNMENT,
   AST_NODE_DOT_EXPRESSION,
   AST_NODE_FUNCTION_CALL,
   AST_NODE_BLOCK,
@@ -67,66 +66,55 @@ typedef struct Symbol {
 } Symbol;
 
 typedef struct AST {
-  bool typing_complete;
-  bool emitted;
+  bool typing_complete: 1;
   AST_Node_Kind kind;
   size_t type;
   Symbol symbol_table;
   Source_Location location;
-
   struct AST *parent;
 
   union {
     struct {
-      struct AST *value;
-    } $return;
-
-    struct {
       String name;
       String return_type;
+
       // todo: add function flags?
       bool is_extern : 1, 
            is_entry : 1;
 
       Vector parameters;
       struct AST *block;
-    } function_declaration;
+    } function;
 
     struct {
       String type;
       String name;
       struct AST *default_value;
-    } variable_declaration;
+    } variable;
 
     struct {
       String name;
       Vector arguments;
-    } function_call;
+    } call;
 
     struct {
       String name;
       Vector members;
-    } type_declaration;
+    } declaration;
 
     struct {
-      String left;
-      String right;
-      struct AST *assignment_value;
-    } dot_expression;
-
-    struct {
-      String name;
-      struct AST *right;
-    } assignment;
+      struct AST *left;
+      String member_name;
+    } dot;
 
     struct {
       AST *left;
       AST *right;
       Token_Type operator;
-    } binary_expression;
+    } binary;
 
+    struct AST *$return;
     AST_List statements;
-
     String string;
     String identifier;
     String number;
@@ -153,7 +141,7 @@ static void parse_panicf(Source_Location location, const char *format, ...) {
 
 static int64_t get_parameter_index(AST *node, String name) {
   assert(node->kind == AST_NODE_FUNCTION_DECLARATION && "get_parameter_index called on a non-function node");
-  auto func = node->function_declaration;
+  auto func = node->function;
   ForEach(AST_Parameter, param, func.parameters, {
     if (Strings_compare(name, param.name)) {
       return i;
@@ -172,12 +160,13 @@ typedef struct AST_Arena {
   struct AST_Arena *next;
 } AST_Arena;
 
-static inline AST *ast_arena_alloc(Lexer_State* state, AST_Arena *arena, AST_Node_Kind kind) {
+static inline AST *ast_arena_alloc(Lexer_State* state, AST_Arena *arena, AST_Node_Kind kind, AST *parent) {
   if (arena->nodes_length < 1024) {
     AST *node = &arena->nodes[arena->nodes_length++];
     node->kind = kind;
     node->type = 0;
     node->location = state->location;
+    node->parent = parent;
     return node;
   } else {
     if (arena->next == NULL) {
@@ -185,7 +174,7 @@ static inline AST *ast_arena_alloc(Lexer_State* state, AST_Arena *arena, AST_Nod
       arena->next->nodes_length = 0;
       arena->next->next = NULL;
     }
-    return ast_arena_alloc(state, arena->next, kind);
+    return ast_arena_alloc(state, arena->next, kind, parent);
   }
 }
 

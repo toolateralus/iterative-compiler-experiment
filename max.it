@@ -1,12 +1,17 @@
-
 fn main() @entry {
-  i32 n1 = 10;
-  i32 n = 200 + 2 * n1;
-  printf("\e[1;31mn = %d, n1 = %d, add_int = %d\n", n, n1, add_int(20, 20));
+  Vector_2 output;
+  output.x = 0;
+  output.y = 10;
+  printf("%d :: %d\n", output.x, output.y);
 }
-type Vector_2(i32 x, i32 y, i32 z, i32 w);
-fn printf(String, ...) @extern;
 
-fn add_int(i32 a, i32 b) i32 {
-  return a + b;
-}
+// fn Vector_2_add(Vector_2 a, Vector_2 b) Vector_2 {
+//   Vector_2 output;
+//   output.x = a.x + b.x;
+//   output.y = a.y + b.y;
+//   return output;
+// }
+
+type Vector_2(i32 x, i32 y);
+
+fn printf(String, ...) @extern;

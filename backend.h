@@ -12,6 +12,7 @@ typedef struct LLVM_Emit_Context {
   LLVMDIBuilderRef debug_info;
   LLVMTargetRef target;
   LLVMTargetDataRef target_data;
+  bool dont_load;
 } LLVM_Emit_Context;
 
 
@@ -23,7 +24,6 @@ LLVMValueRef emit_string(LLVM_Emit_Context *ctx, AST *node);
 LLVMValueRef emit_function_declaration(LLVM_Emit_Context *ctx, AST *node);
 LLVMValueRef emit_type_declaration(LLVM_Emit_Context *ctx, AST *node);
 LLVMValueRef emit_variable_declaration(LLVM_Emit_Context *ctx, AST *node);
-LLVMValueRef emit_assignment(LLVM_Emit_Context *ctx, AST *node);
 LLVMValueRef emit_dot_expression(LLVM_Emit_Context *ctx, AST *node);
 LLVMValueRef emit_function_call(LLVM_Emit_Context *ctx, AST *node);
 LLVMValueRef emit_block(LLVM_Emit_Context *ctx, AST *node);

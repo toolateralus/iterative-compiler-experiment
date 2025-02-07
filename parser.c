@@ -6,11 +6,10 @@ AST *parse_binary_expression(AST_Arena *arena, Lexer_State *state, AST *parent) 
   while (is_binary_operator(token_peek(state).type)) {
     Token operator = token_eat(state);
     AST *right = parse_expression(arena, state, parent);
-    AST *binary_node = ast_arena_alloc(state, arena, AST_NODE_BINARY_EXPRESSION);
-    binary_node->binary_expression.left = left;
-    binary_node->binary_expression.operator = operator.type;
-    binary_node->binary_expression.right = right;
-    binary_node->parent = parent;
+    AST *binary_node = ast_arena_alloc(state, arena, AST_NODE_BINARY_EXPRESSION, parent);
+    binary_node->binary.left = left;
+    binary_node->binary.operator = operator.type;
+    binary_node->binary.right = right;
     left = binary_node;
   }
   return left;
@@ -21,9 +20,8 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state, AST *parent) {
 
   switch (token.type) {
   case TOKEN_STRING: {
-    AST *node = ast_arena_alloc(state, arena, AST_NODE_STRING);
+    AST *node = ast_arena_alloc(state, arena, AST_NODE_STRING, parent);
     node->string = token.value;
-    node->parent = parent;
     return node;
   }
   case TOKEN_IDENTIFIER: {
@@ -31,29 +29,22 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state, AST *parent) {
 
     if (next_token.type == TOKEN_DOT) { // Parse dot expressions
       token_eat(state);                 // Consume '.'
-      AST *dot_node = ast_arena_alloc(state, arena, AST_NODE_DOT_EXPRESSION);
-      dot_node->dot_expression.left = token.value;
-      dot_node->dot_expression.right =
-          token_expect(state, TOKEN_IDENTIFIER).value;
-      dot_node->parent = parent;
-      if (token_peek(state).type == TOKEN_ASSIGN) { // Parse dot assignment
-        token_eat(state);                           // Consume '='
-        dot_node->dot_expression.assignment_value =
-            parse_binary_expression(arena, state, dot_node);
-        token_expect(state, TOKEN_SEMICOLON);
-      }
+      AST *dot_node = ast_arena_alloc(state, arena, AST_NODE_DOT_EXPRESSION, parent);
+      dot_node->dot.left = ast_arena_alloc(state, arena, AST_NODE_IDENTIFIER, parent);
+      dot_node->dot.left->identifier = token.value;
+
+      dot_node->dot.member_name = token_expect(state, TOKEN_IDENTIFIER).value;
       return dot_node;
     }
 
     if (next_token.type == TOKEN_OPEN_PAREN) { // Parse function calls
-      AST *call_node = ast_arena_alloc(state, arena, AST_NODE_FUNCTION_CALL);
-      vector_init(&call_node->function_call.arguments, sizeof(AST *));
-      call_node->function_call.name = token.value;
-      call_node->parent = parent;
+      AST *call_node = ast_arena_alloc(state, arena, AST_NODE_FUNCTION_CALL, parent);
+      vector_init(&call_node->call.arguments, sizeof(AST *));
+      call_node->call.name = token.value;
       token_eat(state); // Consume '('
       while (token_peek(state).type != TOKEN_CLOSE_PAREN) {
         AST *arg = parse_binary_expression(arena, state, call_node);
-        vector_push(&call_node->function_call.arguments, &arg);
+        vector_push(&call_node->call.arguments, &arg);
         if (token_peek(state).type != TOKEN_CLOSE_PAREN) {
           token_expect(state, TOKEN_COMMA);
         }
@@ -68,34 +59,30 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state, AST *parent) {
       if (token_peek(state).type == TOKEN_ASSIGN) {
         token_eat(state); // Consume '='
         AST *var_decl_node =
-            ast_arena_alloc(state, arena, AST_NODE_VARIABLE_DECLARATION);
-        var_decl_node->variable_declaration.type = type;
-        var_decl_node->variable_declaration.name = name;
-        var_decl_node->variable_declaration.default_value =
+            ast_arena_alloc(state, arena, AST_NODE_VARIABLE_DECLARATION, parent);
+        var_decl_node->variable.type = type;
+        var_decl_node->variable.name = name;
+        var_decl_node->variable.default_value =
             parse_binary_expression(arena, state, var_decl_node);
-        var_decl_node->parent = parent;
         token_expect(state, TOKEN_SEMICOLON);
         return var_decl_node;
       } else {
         AST *assignment_node =
-            ast_arena_alloc(state, arena, AST_NODE_VARIABLE_DECLARATION);
-        assignment_node->variable_declaration.type = type;
-        assignment_node->variable_declaration.name = name;
-        assignment_node->parent = parent;
+            ast_arena_alloc(state, arena, AST_NODE_VARIABLE_DECLARATION, parent);
+        assignment_node->variable.type = type;
+        assignment_node->variable.name = name;
         token_expect(state, TOKEN_SEMICOLON);
         return assignment_node;
       }
     }
 
-    AST *node = ast_arena_alloc(state, arena, AST_NODE_IDENTIFIER);
+    AST *node = ast_arena_alloc(state, arena, AST_NODE_IDENTIFIER, parent);
     node->identifier = token.value;
-    node->parent = parent;
     return node;
   }
   case TOKEN_NUMBER: {
-    AST *node = ast_arena_alloc(state, arena, AST_NODE_NUMBER);
+    AST *node = ast_arena_alloc(state, arena, AST_NODE_NUMBER, parent);
     node->number = token.value;
-    node->parent = parent;
     return node;
   }
   default: {
@@ -109,12 +96,11 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state,
                                 AST *parent) {
   token_expect(state, TOKEN_FN_KEYWORD);
   String name = token_expect(state, TOKEN_IDENTIFIER).value;
-  AST *node = ast_arena_alloc(state, arena, AST_NODE_FUNCTION_DECLARATION);
-  vector_init(&node->function_declaration.parameters, sizeof(AST_Parameter));
-  node->function_declaration.is_entry = false;
-  node->function_declaration.is_extern = false;
-  node->function_declaration.name = name;
-  node->parent = parent;
+  AST *node = ast_arena_alloc(state, arena, AST_NODE_FUNCTION_DECLARATION, parent);
+  vector_init(&node->function.parameters, sizeof(AST_Parameter));
+  node->function.is_entry = false;
+  node->function.is_extern = false;
+  node->function.name = name;
   token_expect(state, TOKEN_OPEN_PAREN);
 
   while (token_peek(state).type != TOKEN_CLOSE_PAREN) {
@@ -134,7 +120,7 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state,
       }
     }
 
-    vector_push(&node->function_declaration.parameters, &param);
+    vector_push(&node->function.parameters, &param);
 
     if (token_peek(state).type != TOKEN_CLOSE_PAREN) {
       token_expect(state, TOKEN_COMMA);
@@ -143,9 +129,9 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state,
   token_eat(state); // Consume ')'
 
   if (token_peek(state).type == TOKEN_IDENTIFIER) {
-    node->function_declaration.return_type = token_eat(state).value;
+    node->function.return_type = token_eat(state).value;
   } else {
-    node->function_declaration.return_type = (String) {
+    node->function.return_type = (String) {
       .data = "void",
       .length = 4
     };
@@ -155,37 +141,36 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state,
     token_eat(state);
     auto key = token_expect(state, TOKEN_IDENTIFIER).value;
     if (String_equals(key, "extern")) {
-      node->function_declaration.is_extern = true;
+      node->function.is_extern = true;
     } else if (String_equals(key, "entry")) {
-      node->function_declaration.is_entry = true;
+      node->function.is_entry = true;
     } else {
       parse_panic(state->location,
                   "unexpected identifier for '@...' @tribute :PPP");
     }
   }
 
-  if (node->function_declaration.is_extern) {
+  if (node->function.is_extern) {
     token_expect(state, TOKEN_SEMICOLON);
     return node;
   }
-  node->function_declaration.block = parse_block(arena, state, node);
+  node->function.block = parse_block(arena, state, node);
   return node;
 }
 
 AST *parse_type_declaration(AST_Arena *arena, Lexer_State *state, AST *parent) {
   token_expect(state, TOKEN_TYPE_KEYWORD);
-  AST *node = ast_arena_alloc(state, arena, AST_NODE_TYPE_DECLARATION);
-  vector_init(&node->type_declaration.members, sizeof(AST_Type_Member));
+  AST *node = ast_arena_alloc(state, arena, AST_NODE_TYPE_DECLARATION, parent);
+  vector_init(&node->declaration.members, sizeof(AST_Type_Member));
   String name = token_expect(state, TOKEN_IDENTIFIER).value;
-  node->parent = parent;
   token_expect(state, TOKEN_OPEN_PAREN);
-  node->type_declaration.name = name;
+  node->declaration.name = name;
   while (token_peek(state).type != TOKEN_CLOSE_PAREN) {
     AST_Type_Member member;
     member.type = token_expect(state, TOKEN_IDENTIFIER).value;
     member.name = token_expect(state, TOKEN_IDENTIFIER).value;
 
-    vector_push(&node->type_declaration.members, &member);
+    vector_push(&node->declaration.members, &member);
 
     if (token_peek(state).type != TOKEN_CLOSE_PAREN) {
       token_expect(state, TOKEN_COMMA);
@@ -197,8 +182,7 @@ AST *parse_type_declaration(AST_Arena *arena, Lexer_State *state, AST *parent) {
 }
 
 AST *parse_block(AST_Arena *arena, Lexer_State *state, AST *parent) {
-  AST *node = ast_arena_alloc(state, arena, AST_NODE_BLOCK);
-  node->parent = parent;
+  AST *node = ast_arena_alloc(state, arena, AST_NODE_BLOCK, parent);
   token_expect(state, TOKEN_OPEN_CURLY);
   while (token_peek(state).type != TOKEN_CLOSE_CURLY) {
     ast_list_push(&node->statements, parse_next_statement(arena, state, node));
@@ -217,9 +201,9 @@ AST *parse_next_statement(AST_Arena *arena, Lexer_State *state, AST *parent) {
   switch (token.type) {
   case TOKEN_RETURN_KEYWORD: {
     token_eat(state);
-    AST *node = ast_arena_alloc(state, arena, AST_NODE_RETURN);
+    AST *node = ast_arena_alloc(state, arena, AST_NODE_RETURN, parent);
     if (token_peek(state).type != TOKEN_SEMICOLON) {
-      node->$return.value = parse_binary_expression(arena, state, parent);
+      node->$return = parse_binary_expression(arena, state, parent);
     }
     token_expect(state, TOKEN_SEMICOLON);
     return node;
@@ -227,7 +211,16 @@ AST *parse_next_statement(AST_Arena *arena, Lexer_State *state, AST *parent) {
 
   case TOKEN_IDENTIFIER: {
     AST* expr = parse_expression(arena, state, parent);
-    if (expr->kind == AST_NODE_FUNCTION_CALL) {
+
+    if (token_peek(state).type == TOKEN_ASSIGN) {
+      token_eat(state);
+      AST *assign = ast_arena_alloc(state, arena, AST_NODE_BINARY_EXPRESSION, parent);
+      assign->binary.operator = TOKEN_ASSIGN;
+      assign->binary.left = expr;
+      assign->binary.right = parse_binary_expression(arena, state, parent);
+      token_expect(state, TOKEN_SEMICOLON);
+      expr = assign;
+    } else if (expr->kind == AST_NODE_FUNCTION_CALL) {
       token_expect(state, TOKEN_SEMICOLON);
     }
     return expr;

@@ -19,7 +19,7 @@ void type_check_program(AST program) {
     for (int i = 0; i < program.statements.length; ++i) {
       AST *statement = program.statements.data[i];
       if (statement->kind == AST_NODE_FUNCTION_DECLARATION &&
-          statement->function_declaration.is_entry) {
+          statement->function.is_entry) {
         entry_point = statement;
         break;
       }
@@ -75,7 +75,7 @@ int main(int argc, char *argv[]) {
   });
 
   TIME_REGION("compiled LLVM IR", {
-    system("clang -g generated/output.ll -o generated/output");
+    system("clang -g -lc generated/output.ll -o generated/output");
   });
 
   TIME_REGION("executed 'generated/output' binary", {

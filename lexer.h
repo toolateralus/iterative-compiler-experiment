@@ -178,6 +178,7 @@ static bool is_binary_operator(Token_Type operator) {
     case TOKEN_GT:
     case TOKEN_GTE:
     case TOKEN_LTE:
+    case TOKEN_ASSIGN:
       return true;
     default:
       return false;
@@ -231,7 +232,6 @@ static Operator_Precedence get_operator_precedence(Token_Type operator) {
   }
 }
 
-
 typedef struct Keyword {
   const char *key;
   Token_Type value;
@@ -256,10 +256,10 @@ static Token get_token(Lexer_State *state) {
 
     // Multi-line comments
     // Delimited by ## and ##
-    if (c == '#' && lexer_state_peek_char(state) == '#') {
+    if (c == '/' && lexer_state_peek_char(state) == '*') {
       while (1) {
         c = lexer_state_eat_char(state);
-        if (c == '#' && lexer_state_peek_char(state) == '#') {
+        if (c == '*' && lexer_state_peek_char(state) == '/') {
           lexer_state_eat_char(state);
           break;
         }
@@ -267,7 +267,7 @@ static Token get_token(Lexer_State *state) {
       continue;
     }
 
-    if (c == '#') {
+    if (c == '/' && lexer_state_peek_char(state) == '/') {
       c = lexer_state_eat_char(state);
       while ((c = lexer_state_eat_char(state)) != '\n')
         ;
