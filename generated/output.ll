@@ -3,16 +3,15 @@ source_filename = "program"
 target triple = "x86_64-pc-linux-gnu"
 
 %Vector_2 = type { i32, i32 }
+%Vector_3 = type { %Vector_3, i32 }
 
-@str = private unnamed_addr constant [16 x i8] c"Xaryu Was Here\0A\00", align 1
-@str.1 = private unnamed_addr constant [10 x i8] c"%d :: %d\0A\00", align 1
+@str = private unnamed_addr constant [12 x i8] c"x=%d, y=%d\0A\00", align 1
 
 define void @main() {
 entry:
   %output = alloca %Vector_2, align 8
   %0 = call %Vector_2 @get_Vector_2()
   store %Vector_2 %0, ptr %output, align 4
-  call void (ptr, ...) @printf(ptr @str)
   %dotexpr = getelementptr inbounds %Vector_2, ptr %output, i32 0, i32 0
   store i32 0, ptr %dotexpr, align 4
   %dotexpr1 = getelementptr inbounds %Vector_2, ptr %output, i32 0, i32 1
@@ -28,7 +27,8 @@ entry:
   %load_dot_expr7 = load i32, ptr %dotexpr6, align 4
   %dotexpr8 = getelementptr inbounds %Vector_2, ptr %output, i32 0, i32 1
   %load_dot_expr9 = load i32, ptr %dotexpr8, align 4
-  call void (ptr, ...) @printf(ptr @str.1, i32 %load_dot_expr7, i32 %load_dot_expr9)
+  call void (ptr, ...) @printf(ptr @str, i32 %load_dot_expr7, i32 %load_dot_expr9)
+  %vector = alloca %Vector_3, align 8
   ret void
 }
 

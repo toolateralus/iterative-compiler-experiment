@@ -1,0 +1,39 @@
+// declare a generic function that takes a type T, which must be numerical
+// and then a value of type T called N.
+
+// so if T was i32, youd get
+// fn<i32 N>() i32
+fn<T: Numerical> sqrt(T n) T @const {
+  // these @const variables will get baked into the program
+  // and only ever computed once at compile time.
+  one := T::from(1) @const; 
+  two := T::from(2) @const; 
+
+  mut x := n;
+  mut y := (x + one) / two;
+
+  while y < x {
+    x = y;
+    y = (x + n / x) / two;
+  }
+
+  return x;
+}
+
+// @const on a struct means it CAN be used at compile time for computations,
+// but it does not have to. it's still totally viable for runtime operations, of course.
+type<T, usize N> Vector @const {
+  [T, N] data;
+}
+
+
+// the const constraint just requests that the type be compile time viable.
+// the operator(+) syntax just provides an operator overload for a struct.
+fn<T: const, usize N> operator(+)(Vector<T, N> a, Vector<T, N> b) Vector<T, N> @const {
+  Vector<T, N> result;
+  // Loop over the members of the vector and perform a compile time element wise addition.
+  for idx in 0..N {
+    result.data[idx] = a.data[idx] + b.data[idx];
+  }
+  return result;
+}

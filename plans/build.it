@@ -1,0 +1,55 @@
+fn main() @entry {
+
+}
+
+fn build(Compiler &mut compiler) Build_Command @build @coroutine {
+  (*mut metaprogram, command) := compiler.create_command().
+    set_optimization(Optimization_Level::Maximum).
+    set_output("./build/binary").
+    link(Link::Static, "./deps/libgrease.a").
+    link(Link::Dynamic, "./deps/opengl.so").
+    link(Link::Dynamic, "./deps/GLEW.so").
+    build_with_metaprogram();
+
+  // return the command to the compiler so it begins compilation.
+  // When this yields control back, we will begin processing the type checked AST.
+  yield command;
+
+  yield run(metaprogram);
+}
+
+fn run(&mut Meta_Program metaprogram) Meta_Program_Status @coroutine {
+  while metaprogram.has_intercept() {
+    AST &mut ast = metaprogram.fetch();
+    bool mut mutated = false;
+
+    match ast {
+      AST_Node::Binary_Expression(left, right, operator) => {
+        ...
+      }
+      AST_Node::Unary_Expression(operand, operator) => {
+        ...
+      }
+      AST_Node::Function_Declaration(name, parameters, return_type, block) => {
+        if name.to_lower().to_snake_case() != name {
+          yield compiler.throw(ast, "You have defiled house style! all function names are lowercase and snake case!");
+        }
+      }
+      AST_Node::Function_Call(&mut callee, arguments) => {
+        *callee = My_Freaky_MetaProgram_Utilities::get_random_function_that_matches_signature(argument);
+        mutated = true;
+      }
+      // and dozens of other kinds of nodes,
+      // available for mutation and compile time modification.
+    }
+
+    // If we did mutate one of the ast nodes, commit the changes, and throw the error '!' if we made a mistake.
+    if mutated {
+      yield metaprogram.commit(ast)!!;
+    } 
+
+    // just wait tell the compiler to call back into this coroutine
+    // when the next node is available.
+    yield metaprogram.wait_next();
+  }
+}

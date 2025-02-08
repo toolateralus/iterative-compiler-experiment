@@ -1,0 +1,103 @@
+type Vector_2 @struct ( i32 x, i32 y );
+
+type<i32 R = 4, i32 C = 4> Matrix @struct ( [i32, R * C] data )
+
+type<Okay, Error> Error @union ( Ok(Okay), Err(Error) );
+
+type FileError @enum ( FileNotFound, InsufficientPermissions );
+
+fn printf(String, ...) @unsafe @extern;
+
+// @const functions / types are available, and will be executed, at compile time.
+fn<T: Add, const> add(T a, T b) T @const {
+  return a + b;
+}
+
+mod std::vec {
+  use std::iterator::{Iter, Iterable};
+
+  type<T> Vec @struct {
+    T *mut data,
+    usize length,
+    usize capacity,
+  }
+
+  for Vec<T> impl<T> {
+    fn resize(&mut self, usize new_size) {
+      unsafe { 
+        std::mem::realloc(self.data, new_size); 
+      }
+      if new_size < self.length {
+        self.length = new_size;  
+      }
+      self.capacity = new_size;
+    }
+    fn push(&mut self, T value) {
+      if self.length >= self.capacity {
+        self.resize(self.capacity *= 3);
+      }
+      unsafe {
+        self.data[self.length] = move value;
+      }
+      self.length += 1;
+    }
+  }
+
+  for Vec<T> impl<T> Iterable<T> {
+    fn iter(&mut self) Iter<T> {
+      unsafe return .{
+        ptr = self.data,
+        end = self.data + self.length,
+      };
+    }
+  }
+
+  for Vec<T> impl<T> Drop {
+    fn drop(&mut self) {
+      unsafe { std::mem::free(self.data); }
+    }
+  }
+}
+
+mod std::iterator {
+  type<T: Pointer | Numerical> Iter @struct (
+    T ptr,
+    T end,
+  )
+  
+  for Iter<T> impl<T> {
+    fn current(self) T {
+      return self.ptr;
+    }
+    fn done(self) bool {
+      return self.ptr == self.end;
+    }
+    fn next(&mut self) {
+      self.ptr += 1;
+    }
+  }
+  
+  type<T> Iterable @trait (
+    fn iter() Iter<Okay, Error>;
+  )
+}
+
+
+mod std::mem {
+  fn<T> malloc() T {
+    unsafe { return c_malloc(sizeof(T)) as T*; }
+  }
+  
+  // generic specialization.
+  // also, generics can be inferred when using a return type,
+  // such as `const* n = malloc()` where we know that const * is the expected type,
+  // and we know malloc only uses T as it's return type, so we subsitute that
+  // as our generic argument.
+  fn<> malloc() const* {
+    unsafe { return malloc(1) as const*; }
+  }
+
+  fn<> malloc() mut* {
+    unsafe { return malloc(1) as mut*; }
+  }
+}

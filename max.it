@@ -1,8 +1,10 @@
+
 fn main() @entry {
   Vector_2 output = get_Vector_2();
   output.x = 0;
   output.y = 10;
   output.x = output.x + output.x;
+  printf("x=%d, y=%d\n", output.x, output.y);
 }
 
 fn get_Vector_2() Vector_2 {

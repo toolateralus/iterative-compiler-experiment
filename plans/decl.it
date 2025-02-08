@@ -1,0 +1,77 @@
+
+
+fn variables() {
+  x := 0;
+  i32 x = 0;
+
+  mut x := 0;
+  mut& x := get_x_ref();
+
+  mut i32 x = 0;
+  &mut i32 x = get_x_ref();
+
+  (i32, i32) tuple = get_tuple();
+  mut (i32, i32) tuple = get_tuple();
+  &mut (i32, i32) tuple = get_tuple_ref();
+
+  // legal destructures.
+  (x, y) := get_tuple();
+  (mut x, y) := get_tuple();
+  (x, mut y) := get_tuple();
+
+  // illegal destructure.
+  (&mut x, y) := get_tuple_ref();
+  (x, &mut y) := get_tuple_ref();
+
+  // destructure any arbitrary struct.
+  // same semantics with &mut and mut apply as above.
+  (x, y) := Vector_2.new();
+
+
+  /* 
+    * All initializer lists (for struct or array)
+    * have a static lifetime, i.e in the data section of the program.
+
+    * So, theoretically you could even take the address of an initializer list.
+  */
+
+  // initializer list.
+  Vector_2 vector = .{
+    x = 0,
+    y = 0,
+  };
+
+  // initializer list with an explicit type.
+  vector := Vector_2.{
+    x = 0,
+    y = 0
+  };
+
+  // fixed array. still, static lifetime on the initializer list.
+  mut [i32, 10] array = .[0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+  
+  // same type & value as above.
+  array := i32.[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]; 
+
+  // opaque, const pointer. same as void *
+  *const opaque = std::mem::malloc();
+
+  // opaque, mutable pointer, same as void *
+  *mut opaque = std::mem::malloc();
+
+  // typed, mutable pointer.
+  *mut i32 typed = std::mem::malloc<i32>();
+
+  // unique function pointer syntax, &fn.
+  // it has special non-mut non-const semantics,
+  // it's a callable so it's inherently mutable.
+
+  // @tributes can apply to type signatures, so it can get a bit messy. like below:
+  fn() i32 @const function = &fn get_integer;
+
+  // an easy way to mitigate this is just make a type alias.
+  type Fn = fn() i32 @const;
+
+  // there, much nicer.
+  Fn function = &fn get_integer;
+}
