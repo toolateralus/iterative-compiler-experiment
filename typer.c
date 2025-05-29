@@ -96,18 +96,25 @@ Typer_Progress typer_type_declaration(AST *node) {
   if (node->typing_complete)
     return COMPLETE;
 
-  Type *type = create_type(node, node->declaration.name, STRUCT);
-
+  Vector members;
+  vector_init(&members, sizeof(Type_Member));
   ForEach(AST_Type_Member, member, node->declaration.members, {
     Type *member_type = find_type(member.type);
-    if (!member_type)
+
+    if (!member_type) {
+      vector_free(&members);
       return UNRESOLVED;
+    }
+
     insert_symbol(node, member.name, node, member_type);
     Type_Member type_member;
     type_member.name = member.name;
     type_member.type = member_type->id;
-    vector_push(&type->$struct.members, &type_member);
+    vector_push(&members, &type_member);
   });
+
+  Type *type = create_type(node, node->declaration.name, STRUCT);
+  type->$struct.members = members;
 
   node->type = VOID;
   node->typing_complete = true;
@@ -121,8 +128,8 @@ Typer_Progress typer_variable_declaration(AST *node) {
   typeof(node->variable) *decl = &node->variable;
 
   Typer_Progress value_progress = COMPLETE;
-  if (decl->default_value)
-    value_progress = typer_resolve(decl->default_value);
+  if (decl->value)
+    value_progress = typer_resolve(decl->value);
 
   if (value_progress != COMPLETE)
     return UNRESOLVED;
@@ -131,8 +138,8 @@ Typer_Progress typer_variable_declaration(AST *node) {
   if (!type)
     return UNRESOLVED;
 
-  if (decl->default_value)
-    assert(decl->default_value->type == type->id && "Invalid type in declaration");
+  if (decl->value)
+    assert(decl->value->type == type->id && "Invalid type in declaration");
 
   insert_symbol(node->parent, decl->name, node, type);
 

@@ -8,7 +8,7 @@
 #include <llvm-c/Types.h>
 #include <stdarg.h>
 
-typedef enum {
+typedef enum: u8 {
   AST_NODE_PROGRAM,
   AST_NODE_IDENTIFIER,
   AST_NODE_NUMBER,
@@ -89,7 +89,7 @@ typedef struct AST {
     struct {
       String type;
       String name;
-      struct AST *default_value;
+      struct AST *value;
     } variable;
 
     struct {
@@ -192,6 +192,9 @@ AST *parse_expression(AST_Arena *arena, Lexer_State *state, AST *parent);
 AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state, AST *parent);
 AST *parse_type_declaration(AST_Arena *arena, Lexer_State *state, AST *parent);
 AST *parse_binary_expression(AST_Arena *arena, Lexer_State *state, AST *parent);
+AST *parse_postfix_expression(AST_Arena *arena, Lexer_State *state,
+                              AST *parent);
+
 #define ast_list_push(list, node) do { \
   if ((list)->length >= (list)->capacity) { \
     (list)->capacity = (list)->capacity ? (list)->capacity * 4 : 1; \

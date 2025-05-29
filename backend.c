@@ -22,24 +22,36 @@ static void print_value(LLVMValueRef value) {
   LLVMDisposeMessage(value_str);
 }
 
-// Be very careful using this macro, it can't have do { } while(0) semantic because
-// it's very likely to be used to declare some variables.
-#define DONT_LOAD(old_state, ctx, block)                                                  \
-  bool old_state = ctx->dont_load;\
+// Be very careful using this macro, it can't have do { } while(0) semantic
+// because it's very likely to be used to declare some variables.
+#define DONT_LOAD(old_state, ctx, block)                                       \
+  bool old_state = ctx->dont_load;                                             \
   ctx->dont_load = true;                                                       \
-  block                                                                        \
-  ctx->dont_load = old_state;
+  block ctx->dont_load = old_state;
 
 LLVMTypeRef to_llvm_type(LLVM_Emit_Context *ctx, Type *type) {
   if (type->llvm_type)
     return type->llvm_type;
+
   switch (type->kind) {
-  case VOID:
-    return LLVMVoidType();
-  case STRING:
-    return LLVMPointerType(LLVMInt8Type(), 0);
-  case I32:
-    return LLVMInt32Type();
+  case VOID: {
+    static LLVMTypeRef type;
+    if (!type)
+      type = LLVMVoidType();
+    return type;
+  }
+  case STRING: {
+    static LLVMTypeRef type;
+    if (!type)
+      type = LLVMPointerType(LLVMInt8Type(), 0);
+    return type;
+  }
+  case I32: {
+    static LLVMTypeRef type;
+    if (!type)
+      type = LLVMInt32Type();
+    return type;
+  }
   // TODO: add option for packed struct?
   case STRUCT: {
     type->llvm_type = LLVMStructCreateNamed(ctx->context, type->name.data);
@@ -71,11 +83,8 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
   ctx->context = LLVMContextCreate();
   ctx->builder = LLVMCreateBuilderInContext(ctx->context);
   ctx->module = LLVMModuleCreateWithNameInContext("program", ctx->context);
-  ctx->debug_info = LLVMCreateDIBuilder(ctx->module);
 
   LLVMInitializeNativeTarget();
-  LLVMInitializeNativeAsmPrinter();
-  LLVMInitializeNativeAsmParser();
 
   char *target_triple = LLVMGetDefaultTargetTriple();
   char *features = LLVMGetHostCPUFeatures();
@@ -92,13 +101,43 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
     exit(1);
   }
 
-  LLVMCodeGenOptLevel opt_level = LLVMCodeGenLevelAggressive;
+  LLVMCodeGenOptLevel opt_level = LLVMCodeGenLevelDefault;
 
   LLVMTargetMachineRef machine =
       LLVMCreateTargetMachine(target, target_triple, cpu, features, opt_level,
                               LLVMRelocPIC, LLVMCodeModelDefault);
 
   ctx->target_data = LLVMCreateTargetDataLayout(machine);
+
+  LLVMDIBuilderRef di_builder = LLVMCreateDIBuilder(ctx->module);
+
+  const char * source_dir = "/home/josh_arch/source/c/iterative-compiler/";
+  int dir_length = strlen(source_dir);
+  const char * source_file = "max.it";
+  int file_length = strlen(source_file);
+  LLVMMetadataRef di_file =
+      LLVMDIBuilderCreateFile(di_builder, source_file, file_length, source_dir, dir_length);
+
+  ctx->di_builder = di_builder;
+  ctx->di_file = di_file;
+
+  LLVMMetadataRef compile_unit = LLVMDIBuilderCreateCompileUnit(
+      di_builder, LLVMDWARFSourceLanguageC, di_file, "Iterative", 9, 0, "", 0,
+      0, 0, 0, LLVMDWARFEmissionFull, 0, 0, 0, "", 0, "", 0);
+
+  LLVMValueRef debug_info_version_value =
+      LLVMConstInt(LLVMInt32TypeInContext(ctx->context), 3, 0);
+  LLVMMetadataRef debug_info_version_metadata =
+      LLVMValueAsMetadata(debug_info_version_value);
+  LLVMAddModuleFlag(ctx->module, LLVMModuleFlagBehaviorWarning,
+                    "Debug Info Version", 18, debug_info_version_metadata);
+
+  LLVMValueRef dwarf_version_value =
+      LLVMConstInt(LLVMInt32TypeInContext(ctx->context), 4, 0);
+  LLVMMetadataRef dwarf_version_metadata =
+      LLVMValueAsMetadata(dwarf_version_value);
+  LLVMAddModuleFlag(ctx->module, LLVMModuleFlagBehaviorWarning, "Dwarf Version",
+                    12, dwarf_version_metadata);
 
   { // GENERATE THE CODE BY VISITING THE AST
     for (int i = 0; i < program->statements.length; ++i) {
@@ -118,7 +157,7 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
       emit_node(ctx, program->statements.data[i]);
     }
   }
-
+    
   if (COMPILATION_MODE == CM_RELEASE) {
     const char *passes = "default<O3>";
     LLVMPassBuilderOptionsRef options = LLVMCreatePassBuilderOptions();
@@ -133,7 +172,7 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
     }
     LLVMDisposePassBuilderOptions(options);
   }
-  
+
   char *error;
   if (LLVMPrintModuleToFile(ctx->module, "generated/output.ll", &error)) {
     printf("%s\n", error);
@@ -189,14 +228,38 @@ LLVMValueRef emit_forward_declaration(LLVM_Emit_Context *ctx, AST *node) {
 LLVMValueRef emit_function_declaration(LLVM_Emit_Context *ctx, AST *node) {
   if (!node->function.is_extern) {
     LLVMValueRef function = find_symbol(node, node->function.name)->llvm_value;
+
+    LLVMMetadataRef func_type_di = LLVMDIBuilderCreateSubroutineType(
+        ctx->di_builder, ctx->di_file, NULL, 0, 0);
+
+    LLVMMetadataRef func_di = LLVMDIBuilderCreateFunction(
+        ctx->di_builder, ctx->di_file, node->function.name.data,
+        node->function.name.length, node->function.name.data,
+        node->function.name.length, ctx->di_file, node->location.line,
+        func_type_di, 1, 1, 0, 0, 0);
+
+    LLVMMetadataRef old_scope = ctx->scope;
+    ctx->scope = func_di;
+
+    LLVMSetSubprogram(function, func_di);
+
     LLVMBasicBlockRef entry =
         LLVMAppendBasicBlockInContext(ctx->context, function, "entry");
     LLVMPositionBuilderAtEnd(ctx->builder, entry);
+
+    LLVMMetadataRef scope = func_di;
+    LLVMMetadataRef debug_loc = LLVMDIBuilderCreateDebugLocation(
+        ctx->context, node->location.line, 0, scope, NULL);
+    LLVMSetCurrentDebugLocation2(ctx->builder, debug_loc);
+
     emit_block(ctx, node->function.block);
 
     if (strncmp(node->function.return_type.data, "void", 4) == 0) {
       LLVMBuildRetVoid(ctx->builder);
     }
+
+    ctx->scope = old_scope;
+    LLVMSetCurrentDebugLocation(ctx->builder, NULL);
   }
   return nullptr;
 }
@@ -211,8 +274,20 @@ LLVMValueRef emit_function_call(LLVM_Emit_Context *ctx, AST *node) {
     args[i] = arg;
   }
 
-  return LLVMBuildCall2(ctx->builder, symbol->llvm_function_type, function,
-                        args, node->call.arguments.length, "");
+  LLVMMetadataRef scope = ctx->scope;
+  LLVMMetadataRef debug_loc = LLVMDIBuilderCreateDebugLocation(
+      ctx->context, node->location.line, node->location.column, scope, NULL);
+  LLVMSetCurrentDebugLocation2(ctx->builder, debug_loc);
+
+  // Emit the function call
+  LLVMValueRef call =
+      LLVMBuildCall2(ctx->builder, symbol->llvm_function_type, function, args,
+                     node->call.arguments.length, "");
+
+  // Clear the current debug location
+  LLVMSetCurrentDebugLocation2(ctx->builder, NULL);
+
+  return call;
 }
 
 LLVMValueRef emit_type_declaration(LLVM_Emit_Context *ctx, AST *node) {
@@ -327,9 +402,21 @@ LLVMValueRef emit_variable_declaration(LLVM_Emit_Context *ctx, AST *node) {
   LLVMValueRef var =
       LLVMBuildAlloca(ctx->builder, var_type, node->variable.name.data);
   find_symbol(node, node->variable.name)->llvm_value = var;
-  if (node->variable.default_value) {
-    LLVMValueRef init = emit_node(ctx, node->variable.default_value);
+
+  // Create debug location
+  LLVMMetadataRef debug_location =
+      LLVMDIBuilderCreateDebugLocation(ctx->context, node->location.line,
+                                       node->location.column, ctx->scope, NULL);
+
+  // Attach debug location to the allocation instruction
+  LLVMInstructionSetDebugLoc(var, debug_location);
+
+  if (node->variable.value) {
+    LLVMValueRef init = emit_node(ctx, node->variable.value);
     LLVMBuildStore(ctx->builder, init, var);
+
+    // Attach debug location to the store instruction
+    LLVMSetInstDebugLocation(ctx->builder, LLVMMetadataAsValue(ctx->context, debug_location));
   } else {
     // TODO: figure out why memset refuses to link.
     // TODO; we should have zero-initialization-by-default;
@@ -338,88 +425,138 @@ LLVMValueRef emit_variable_declaration(LLVM_Emit_Context *ctx, AST *node) {
     // unsigned alignment = LLVMABIAlignmentOfType(ctx->target_data, var_type);
     // LLVMBuildMemSet(ctx->builder, var, zero, size, alignment);
   }
+
   return var;
 }
 
 LLVMValueRef emit_dot_expression(LLVM_Emit_Context *ctx, AST *node) {
-  DONT_LOAD(old_state, ctx, 
-    LLVMValueRef left = emit_node(ctx, node->dot.left);
-  )
+  // Create debug location
+  LLVMMetadataRef debug_location = LLVMDIBuilderCreateDebugLocation(
+      ctx->context, node->location.line, node->location.column, ctx->scope, NULL);
+
+  DONT_LOAD(old_state, ctx, LLVMValueRef left = emit_node(ctx, node->dot.left);)
   Type *left_type = get_type(node->dot.left->type);
   size_t member_index = get_member_index(left_type, node->dot.member_name);
-  Type *member_type = get_type(V_AT(Type_Member, left_type->$struct.members, member_index).type);
+  Type *member_type = get_type(
+      V_AT(Type_Member, left_type->$struct.members, member_index).type);
   LLVMValueRef gep =
       LLVMBuildStructGEP2(ctx->builder, to_llvm_type(ctx, left_type), left,
                           member_index, "dotexpr");
+
+  // Attach debug location to the GEP instruction
+  LLVMInstructionSetDebugLoc(gep, debug_location);
 
   // For assignment.
   if (ctx->dont_load) {
     return gep;
   } else {
     LLVMTypeRef llvm_member_type = to_llvm_type(ctx, member_type);
-    return LLVMBuildLoad2(ctx->builder, llvm_member_type, gep, "load_dot_expr");
+    LLVMValueRef load = LLVMBuildLoad2(ctx->builder, llvm_member_type, gep, "load_dot_expr");
+
+    // Attach debug location to the load instruction
+    LLVMInstructionSetDebugLoc(load, debug_location);
+
+    return load;
   }
 }
 
-
-
 LLVMValueRef emit_binary_expression(LLVM_Emit_Context *ctx, AST *node) {
+  // Create debug location
+  LLVMMetadataRef debug_location = LLVMDIBuilderCreateDebugLocation(
+      ctx->context, node->location.line, node->location.column, ctx->scope, NULL);
+
   if (node->binary.operator == TOKEN_ASSIGN) {
-    DONT_LOAD(old_state, ctx, 
-      LLVMValueRef left = emit_node(ctx, node->binary.left);
-    )    
+    DONT_LOAD(old_state, ctx,
+              LLVMValueRef left = emit_node(ctx, node->binary.left);)
     LLVMValueRef right = emit_node(ctx, node->binary.right);
     LLVMBuildStore(ctx->builder, right, left);
+
+    // Attach debug location to the store instruction
+    LLVMSetInstDebugLocation(ctx->builder, LLVMMetadataAsValue(ctx->context, debug_location));
+
     return nullptr;
   }
 
   LLVMValueRef left = emit_node(ctx, node->binary.left);
   LLVMValueRef right = emit_node(ctx, node->binary.right);
 
+  LLVMValueRef result;
   switch (node->binary.operator) {
   case TOKEN_ADD:
-    return LLVMBuildAdd(ctx->builder, left, right, "addtmp");
+    result = LLVMBuildAdd(ctx->builder, left, right, "addtmp");
+    break;
   case TOKEN_SUB:
-    return LLVMBuildSub(ctx->builder, left, right, "subtmp");
+    result = LLVMBuildSub(ctx->builder, left, right, "subtmp");
+    break;
   case TOKEN_MUL:
-    return LLVMBuildMul(ctx->builder, left, right, "multmp");
+    result = LLVMBuildMul(ctx->builder, left, right, "multmp");
+    break;
   case TOKEN_DIV:
-    return LLVMBuildSDiv(ctx->builder, left, right, "divtmp");
+    result = LLVMBuildSDiv(ctx->builder, left, right, "divtmp");
+    break;
   case TOKEN_MOD:
-    return LLVMBuildSRem(ctx->builder, left, right, "modtmp");
+    result = LLVMBuildSRem(ctx->builder, left, right, "modtmp");
+    break;
   case TOKEN_AND:
-    return LLVMBuildAnd(ctx->builder, left, right, "andtmp");
+    result = LLVMBuildAnd(ctx->builder, left, right, "andtmp");
+    break;
   case TOKEN_OR:
-    return LLVMBuildOr(ctx->builder, left, right, "ortmp");
+    result = LLVMBuildOr(ctx->builder, left, right, "ortmp");
+    break;
   case TOKEN_XOR:
-    return LLVMBuildXor(ctx->builder, left, right, "xortmp");
+    result = LLVMBuildXor(ctx->builder, left, right, "xortmp");
+    break;
   case TOKEN_SHL:
-    return LLVMBuildShl(ctx->builder, left, right, "shltmp");
+    result = LLVMBuildShl(ctx->builder, left, right, "shltmp");
+    break;
   case TOKEN_SHR:
-    return LLVMBuildLShr(ctx->builder, left, right, "shrtmp");
+    result = LLVMBuildLShr(ctx->builder, left, right, "shrtmp");
+    break;
   case TOKEN_EQ:
-    return LLVMBuildICmp(ctx->builder, LLVMIntEQ, left, right, "eqtmp");
+    result = LLVMBuildICmp(ctx->builder, LLVMIntEQ, left, right, "eqtmp");
+    break;
   case TOKEN_NEQ:
-    return LLVMBuildICmp(ctx->builder, LLVMIntNE, left, right, "neqtmp");
+    result = LLVMBuildICmp(ctx->builder, LLVMIntNE, left, right, "neqtmp");
+    break;
   case TOKEN_LT:
-    return LLVMBuildICmp(ctx->builder, LLVMIntSLT, left, right, "lttmp");
+    result = LLVMBuildICmp(ctx->builder, LLVMIntSLT, left, right, "lttmp");
+    break;
   case TOKEN_GT:
-    return LLVMBuildICmp(ctx->builder, LLVMIntSGT, left, right, "gttmp");
+    result = LLVMBuildICmp(ctx->builder, LLVMIntSGT, left, right, "gttmp");
+    break;
   case TOKEN_LTE:
-    return LLVMBuildICmp(ctx->builder, LLVMIntSLE, left, right, "ltetmp");
+    result = LLVMBuildICmp(ctx->builder, LLVMIntSLE, left, right, "ltetmp");
+    break;
   case TOKEN_GTE:
-    return LLVMBuildICmp(ctx->builder, LLVMIntSGE, left, right, "gtetmp");
+    result = LLVMBuildICmp(ctx->builder, LLVMIntSGE, left, right, "gtetmp");
+    break;
   default:
     fprintf(stderr, "Unknown binary operator: %d\n", node->binary.operator);
     exit(1);
   }
+
+  // Attach debug location to the result instruction
+  LLVMInstructionSetDebugLoc(result, debug_location);
+
+  return result;
 }
 
 LLVMValueRef emit_return_statement(LLVM_Emit_Context *ctx, AST *node) {
+  LLVMMetadataRef debug_location = LLVMDIBuilderCreateDebugLocation(
+      ctx->context, node->location.line, node->location.column, ctx->scope, NULL);
+
   if (node->$return) {
-    LLVMBuildRet(ctx->builder, emit_node(ctx, node->$return));
+    LLVMValueRef ret_val = emit_node(ctx, node->$return);
+    LLVMBuildRet(ctx->builder, ret_val);
+
+    // Attach debug location to the return instruction
+    LLVMBasicBlockRef current_block = LLVMGetInsertBlock(ctx->builder);
+    LLVMValueRef last_instruction = LLVMGetLastInstruction(current_block);
+    LLVMInstructionSetDebugLoc(last_instruction, debug_location);
   } else {
     LLVMBuildRetVoid(ctx->builder);
+    // Attach debug location to the return void instruction
+    LLVMSetInstDebugLocation(ctx->builder, LLVMMetadataAsValue(ctx->context, debug_location));
   }
   return nullptr;
 }
