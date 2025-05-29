@@ -6,37 +6,37 @@
 
 Typer_Progress typer_identifier(AST *node) {
   if (node->typing_complete)
-    return COMPLETE;
+    return TYPER_COMPLETE;
 
   auto symbol = find_symbol(node->parent, node->identifier);
   if (!symbol) {
-    return UNRESOLVED;
+    return TYPER_UNRESOLVED;
   } else {
     node->typing_complete = true;
     node->type = symbol->type;
-    return COMPLETE;
+    return TYPER_COMPLETE;
   }
 }
 
 Typer_Progress typer_number(AST *node) {
   if (node->typing_complete)
-    return COMPLETE;
+    return TYPER_COMPLETE;
   node->type = I32;
   node->typing_complete = true;
-  return COMPLETE;
+  return TYPER_COMPLETE;
 }
 
 Typer_Progress typer_string(AST *node) {
   if (node->typing_complete)
-    return COMPLETE;
+    return TYPER_COMPLETE;
   node->type = STRING;
   node->typing_complete = true;
-  return COMPLETE;
+  return TYPER_COMPLETE;
 }
 
 Typer_Progress typer_function_declaration(AST *node) {
   if (node->typing_complete)
-    return COMPLETE;
+    return TYPER_COMPLETE;
 
   Vector parameter_types;
   vector_init(&parameter_types, sizeof(size_t));
@@ -52,7 +52,7 @@ Typer_Progress typer_function_declaration(AST *node) {
     Type *param_type = find_type(parameter->type);
 
     if (!param_type)
-      return UNRESOLVED;
+      return TYPER_UNRESOLVED;
 
     vector_push(&parameter_types, &param_type->id);
 
@@ -64,15 +64,15 @@ Typer_Progress typer_function_declaration(AST *node) {
   auto return_ty = find_type(node->function.return_type);
 
   if (!return_ty) {
-    return UNRESOLVED;
+    return TYPER_UNRESOLVED;
   }
 
   if (!node->function.is_extern) {
     // Resolve the function body
     Typer_Progress body_progress =
         typer_resolve(node->function.block);
-    if (body_progress != COMPLETE)
-      return UNRESOLVED;
+    if (body_progress != TYPER_COMPLETE)
+      return TYPER_UNRESOLVED;
   }
 
 
@@ -89,12 +89,12 @@ Typer_Progress typer_function_declaration(AST *node) {
   insert_symbol(node->parent, node->function.name, node, type);
   node->type = type->id;
   node->typing_complete = true;
-  return COMPLETE;
+  return TYPER_COMPLETE;
 }
 
 Typer_Progress typer_type_declaration(AST *node) {
   if (node->typing_complete)
-    return COMPLETE;
+    return TYPER_COMPLETE;
 
   Vector members;
   vector_init(&members, sizeof(Type_Member));
@@ -103,7 +103,7 @@ Typer_Progress typer_type_declaration(AST *node) {
 
     if (!member_type) {
       vector_free(&members);
-      return UNRESOLVED;
+      return TYPER_UNRESOLVED;
     }
 
     insert_symbol(node, member.name, node, member_type);
@@ -118,25 +118,25 @@ Typer_Progress typer_type_declaration(AST *node) {
 
   node->type = VOID;
   node->typing_complete = true;
-  return COMPLETE;
+  return TYPER_COMPLETE;
 }
 
 Typer_Progress typer_variable_declaration(AST *node) {
   if (node->typing_complete)
-    return COMPLETE;
+    return TYPER_COMPLETE;
 
   typeof(node->variable) *decl = &node->variable;
 
-  Typer_Progress value_progress = COMPLETE;
+  Typer_Progress value_progress = TYPER_COMPLETE;
   if (decl->value)
     value_progress = typer_resolve(decl->value);
 
-  if (value_progress != COMPLETE)
-    return UNRESOLVED;
+  if (value_progress != TYPER_COMPLETE)
+    return TYPER_UNRESOLVED;
 
   Type *type = find_type(decl->type);
   if (!type)
-    return UNRESOLVED;
+    return TYPER_UNRESOLVED;
 
   if (decl->value)
     assert(decl->value->type == type->id && "Invalid type in declaration");
@@ -145,18 +145,18 @@ Typer_Progress typer_variable_declaration(AST *node) {
 
   node->type = VOID;
   node->typing_complete = true;
-  return COMPLETE;
+  return TYPER_COMPLETE;
 }
 
 Typer_Progress typer_dot_expression(AST *node) {
   if (node->typing_complete)
-    return COMPLETE;
+    return TYPER_COMPLETE;
 
   typer_resolve(node->dot.left);
   Type *left_type = get_type(node->dot.left->type);
 
   if (!left_type)
-    return UNRESOLVED;
+    return TYPER_UNRESOLVED;
 
   Type_Member *member = find_member(left_type, node->dot.member_name);
 
@@ -165,17 +165,17 @@ Typer_Progress typer_dot_expression(AST *node) {
 
   node->type = member->type;
   node->typing_complete = true;
-  return COMPLETE;
+  return TYPER_COMPLETE;
 }
 
 Typer_Progress typer_function_call(AST *node) {
   if (node->typing_complete)
-    return COMPLETE;
+    return TYPER_COMPLETE;
 
   Symbol *symbol = find_symbol(node->parent, node->call.name);
 
   if (!symbol)
-    return UNRESOLVED;
+    return TYPER_UNRESOLVED;
 
   Type *type = get_type(symbol->type);
 
@@ -191,26 +191,26 @@ Typer_Progress typer_function_call(AST *node) {
   for (size_t i = 0; i < node->call.arguments.length; ++i) {
     Typer_Progress arg_progress =
         typer_resolve(V_AT(AST *, node->call.arguments, i));
-    if (arg_progress != COMPLETE)
-      return UNRESOLVED;
+    if (arg_progress != TYPER_COMPLETE)
+      return TYPER_UNRESOLVED;
   }
 
   node->type = type->$function.$return;
   node->typing_complete = true;
-  return COMPLETE;
+  return TYPER_COMPLETE;
 }
 
 Typer_Progress typer_binary_expression(AST *node) {
   if (node->typing_complete)
-    return COMPLETE;
+    return TYPER_COMPLETE;
 
   Typer_Progress left_progress = typer_resolve(node->binary.left);
-  if (left_progress != COMPLETE)
-    return UNRESOLVED;
+  if (left_progress != TYPER_COMPLETE)
+    return TYPER_UNRESOLVED;
 
   Typer_Progress right_progress = typer_resolve(node->binary.right);
-  if (right_progress != COMPLETE)
-    return UNRESOLVED;
+  if (right_progress != TYPER_COMPLETE)
+    return TYPER_UNRESOLVED;
 
   if (node->binary.left->type != node->binary.right->type) {
     fprintf(stderr, "invalid types in binary expression\n");
@@ -219,23 +219,23 @@ Typer_Progress typer_binary_expression(AST *node) {
 
   node->type = node->binary.left->type;
   node->typing_complete = true;
-  return COMPLETE;
+  return TYPER_COMPLETE;
 }
 
 Typer_Progress typer_block(AST *node) {
   if (node->typing_complete)
-    return COMPLETE;
+    return TYPER_COMPLETE;
   // Resolve each statement in the block
   for (size_t i = 0; i < node->statements.length; ++i) {
     Typer_Progress stmt_progress = typer_resolve(node->statements.data[i]);
-    if (stmt_progress != COMPLETE)
-      return UNRESOLVED;
+    if (stmt_progress != TYPER_COMPLETE)
+      return TYPER_UNRESOLVED;
   }
   node->typing_complete = true;
-  return COMPLETE;
+  return TYPER_COMPLETE;
 }
 
 Typer_Progress typer_return_statement(AST *node) {
-  if (node->$return) return typer_resolve(node->$return);
-  return COMPLETE;
+  if (node->return_expression) return typer_resolve(node->return_expression);
+  return TYPER_COMPLETE;
 }

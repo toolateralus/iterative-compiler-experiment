@@ -4,8 +4,8 @@
 #include "parser.h"
 
 typedef enum {
-  UNRESOLVED,
-  COMPLETE,
+  TYPER_UNRESOLVED,
+  TYPER_COMPLETE,
 } Typer_Progress;
 
 Typer_Progress typer_identifier(AST *node);

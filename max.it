@@ -1,5 +1,5 @@
 fn main() @entry {
-  clamp();
+  i32 clamped = clamp();
   printf("Hello, World\n");
   Vector_3 dependent;
   dependent.xy.y = 50;

@@ -545,8 +545,8 @@ LLVMValueRef emit_return_statement(LLVM_Emit_Context *ctx, AST *node) {
   LLVMMetadataRef debug_location = LLVMDIBuilderCreateDebugLocation(
       ctx->context, node->location.line, node->location.column, ctx->scope, NULL);
 
-  if (node->$return) {
-    LLVMValueRef ret_val = emit_node(ctx, node->$return);
+  if (node->return_expression) {
+    LLVMValueRef ret_val = emit_node(ctx, node->return_expression);
     LLVMBuildRet(ctx->builder, ret_val);
 
     // Attach debug location to the return instruction

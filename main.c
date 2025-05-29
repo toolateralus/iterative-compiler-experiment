@@ -1,5 +1,6 @@
 #include "backend.h"
 #include "core.h"
+#include "graph.h"
 #include "parser.h"
 #include "typer.h"
 #include <stdio.h>
@@ -7,8 +8,8 @@
 
 size_t address = 0;
 Vector type_table;
-
 Compilation_Mode COMPILATION_MODE = CM_DEBUG;
+int node_printer_indentation=0;
 
 void type_check_program(AST program) {
   initialize_type_system();
@@ -34,7 +35,7 @@ void type_check_program(AST program) {
   while (1) {
     bool done = true;
     for (int i = 0; i < program.statements.length; ++i) {
-      if (typer_resolve(program.statements.data[i]) == UNRESOLVED) {
+      if (typer_resolve(program.statements.data[i]) == TYPER_UNRESOLVED) {
         done = false;
       }
     }
@@ -67,6 +68,14 @@ int main(int argc, char *argv[]) {
   AST program;
 
   TIME_REGION("parsed", { parse_program(&state, &arena, &program); });
+
+  DepNodeRegistry registry = {0};
+  DepGraph graph = {0};
+  populate_dep_graph(&registry, &graph, &program);
+  print_graph(&graph);
+
+  return 0;
+
   TIME_REGION("completed type checking", { type_check_program(program); });
 
   TIME_REGION("generated LLVM IR", {

@@ -113,14 +113,13 @@ typedef struct AST {
       Token_Type operator;
     } binary;
 
-    struct AST *$return;
+    struct AST *return_expression;
     AST_List statements;
     String string;
     String identifier;
     String number;
   };
 } AST;
-
 
 [[noreturn]]
 static void parse_panic(Source_Location location, const char * message) {

@@ -1,5 +1,5 @@
 PointerAlignment: Right
-BasedOnStyle: LLVM
+BasedOnStyle: Google
 IndentWidth: 2
 TabWidth: 2
 UseTab: Never
@@ -10,14 +10,3 @@ KeepEmptyLinesAtTheStartOfBlocks: false
 MaxEmptyLinesToKeep: 1
 SortIncludes: false
 SpaceBeforeParens: ControlStatements
-BreakBeforeBraces: Allman
-IndentPPDirectives: BeforeHash
-IndentWrappedFunctionNames: true
-SpacesInContainerLiterals: true
-SpacesInCStyleCastParentheses: false
-SpacesInAngles: false
-SpacesInSquareBrackets: false
-SpacesInParentheses: false
-SpacesInEmptyParentheses: false
-Cpp11BracedListStyle: true
-AllowShortFunctionsOnASingleLine: None

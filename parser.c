@@ -105,7 +105,7 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state,
         param.name = token_expect(state, TOKEN_IDENTIFIER).value;
       }
     }
-
+    
     vector_push(&node->function.parameters, &param);
 
     if (token_peek(state).type != TOKEN_CLOSE_PAREN) {
@@ -132,12 +132,15 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state,
                   "unexpected identifier for '@...' @tribute :PPP");
     }
   }
+  
+  insert_symbol(parent, name, node, NULL);
 
   if (node->function.is_extern) {
     token_expect(state, TOKEN_SEMICOLON);
     return node;
   }
   node->function.block = parse_block(arena, state, node);
+
   return node;
 }
 
@@ -161,6 +164,7 @@ AST *parse_type_declaration(AST_Arena *arena, Lexer_State *state, AST *parent) {
   }
   token_expect(state, TOKEN_CLOSE_PAREN);
   token_expect(state, TOKEN_SEMICOLON);
+  insert_symbol(parent, name, node, NULL);
   return node;
 }
 
@@ -186,7 +190,7 @@ AST *parse_next_statement(AST_Arena *arena, Lexer_State *state, AST *parent) {
     token_eat(state);
     AST *node = ast_arena_alloc(state, arena, AST_NODE_RETURN, parent);
     if (token_peek(state).type != TOKEN_SEMICOLON) {
-      node->$return = parse_binary_expression(arena, state, parent);
+      node->return_expression = parse_binary_expression(arena, state, parent);
     }
     token_expect(state, TOKEN_SEMICOLON);
     return node;
@@ -207,6 +211,7 @@ AST *parse_next_statement(AST_Arena *arena, Lexer_State *state, AST *parent) {
       }
 
       token_expect(state, TOKEN_SEMICOLON);
+      insert_symbol(parent, name, var_decl_node, NULL);
       return var_decl_node;
     }
 
