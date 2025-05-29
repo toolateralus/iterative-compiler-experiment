@@ -154,10 +154,7 @@ static inline void populate_dep_graph(DepNodeRegistry *registry, DepGraph *graph
   }
 }
 
-bool resolve_node(DepNode *node, DepNodeRegistry *registry);
-
 extern int node_printer_indentation;
-
 static inline void print_node(DepNode *node) {
   for (int i = 0; i < node_printer_indentation; ++i) {
     printf("  ");

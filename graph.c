@@ -82,3 +82,4 @@ void graph_builder_type_declaration(AST *node, DepNodeRegistry *registry, DepGra
 
   add_node_to_dep_graph(graph, dep_node);
 }
+
