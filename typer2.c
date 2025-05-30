@@ -54,14 +54,13 @@ THIR *generate_thir_from_ast(AST *node, Vector *thir_symbols) {
     case AST_NODE_FUNCTION_CALL: {
       THIRSymbol *symbol = find_thir_symbol(thir_symbols, node->call.name);
       THIR *function = symbol->thir;
-      THIRList args ={0};
-      for (int i = 0; i < node->call.arguments.length; ++i) {
-        AST *argument = &node->call.arguments.data[i];
-        thir_list_push(&args, generate_thir_from_ast(argument, thir_symbols));
-      }
       THIR *thir = THIR_ALLOC(THIR_CALL, node->location);
+      for (int i = 0; i < node->call.arguments.length; ++i) {
+        AST *argument = V_AT(AST*, node->call.arguments, i);
+        THIR *thir_arg= generate_thir_from_ast(argument, thir_symbols);
+        thir_list_push(&thir->call.arguments, thir_arg);
+      }
       thir->call.function = function;
-      thir->call.arguments = args;
       Type *fn_type = get_type(symbol->thir->type);
       thir->type = fn_type->$function.$return;
 
