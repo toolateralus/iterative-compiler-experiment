@@ -153,7 +153,6 @@ static void initialize_type_system() {
   create_type(nullptr, (String){.data = "String", .length = 6}, STRING);
 }
 
-
 static String type_to_string(Type *type) {
   switch (type->kind) {
     case VOID:

@@ -12,7 +12,7 @@
 size_t address = 0;
 Vector type_table;
 Compilation_Mode COMPILATION_MODE = CM_DEBUG;
-int node_printer_indentation=0;
+int node_printer_indentation = 0;
 
 Arena thir_arena;
 
@@ -22,20 +22,20 @@ void type_check_program(AST program) {
   arena_init(&thir_arena);
 
   // Find an entry point marked function.
-  { 
+  {
     AST *entry_point = nullptr;
     for (int i = 0; i < program.statements.length; ++i) {
       AST *statement = program.statements.data[i];
-      if (statement->kind == AST_NODE_FUNCTION_DECLARATION &&
-          statement->function.is_entry) {
+      if (statement->kind == AST_NODE_FUNCTION_DECLARATION && statement->function.is_entry) {
         entry_point = statement;
         break;
       }
     }
 
     if (!entry_point) {
-      panic("Unable to find entry point. Be sure to mark one of your functions "
-            "with `fn ...() @entry { ... }` the `@entry` @tribute :D");
+      panic(
+          "Unable to find entry point. Be sure to mark one of your functions "
+          "with `fn ...() @entry { ... }` the `@entry` @tribute :D");
     }
   }
 
@@ -46,8 +46,7 @@ void type_check_program(AST program) {
         done = false;
       }
     }
-    if (done)
-      break;
+    if (done) break;
   }
 }
 
@@ -55,8 +54,7 @@ void parse_program(Lexer_State *state, AST_Arena *arena, AST *program) {
   lexer_state_populate_lookahead_buffer(state);
   while (1) {
     AST *node = parse_next_statement(arena, state, program);
-    if (!node)
-      break;
+    if (!node) break;
     ast_list_push(&program->statements, node);
   }
 }
@@ -67,7 +65,7 @@ int main(int argc, char *argv[]) {
       COMPILATION_MODE = CM_RELEASE;
     }
   }
-  
+
   Lexer_State state;
   lexer_state_read_file(&state, "max.it");
   AST_Arena arena = {0};
@@ -81,12 +79,12 @@ int main(int argc, char *argv[]) {
 
   printf("dependency graph:\n");
   print_graph(&graph);
-  
+
   Vector thir_symbols;
   arena_init(&thir_arena);
   vector_init(&thir_symbols, sizeof(THIRSymbol));
   initialize_type_system();
-  
+
   THIR *thir = generate_thir(&graph, &registry, &thir_symbols);
 
   printf("thir:\n");
@@ -101,13 +99,9 @@ int main(int argc, char *argv[]) {
     emit_program(&ctx, &program);
   });
 
-  TIME_REGION("compiled LLVM IR", {
-    system("clang -g -lc generated/output.ll -o generated/output");
-  });
+  TIME_REGION("compiled LLVM IR", { system("clang -g -lc generated/output.ll -o generated/output"); });
 
-  TIME_REGION("executed 'generated/output' binary", {
-    system("./generated/output");
-  });
+  TIME_REGION("executed 'generated/output' binary", { system("./generated/output"); });
 
   free_lexer_state(&state);
   return 0;

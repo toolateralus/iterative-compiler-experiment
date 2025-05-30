@@ -4,8 +4,22 @@
 
 void graph_builder_variable_declaration(AST *node, DepNodeRegistry *registry, DepNode *parent) {
   Symbol *symbol = find_symbol(node->parent, node->variable.type);
+  // Create a dependency if the type is user-defined.
   if (symbol && symbol->node) {
     add_dep_to_dep_node(parent, create_dep_node(symbol->node, registry));
+  }
+
+  // create a dependency if it's a call, binary, or member access.
+  if (node->variable.value) {
+    AST *value = node->variable.value;
+    switch (value->kind) {
+      case AST_NODE_FUNCTION_CALL:
+        return graph_builder_function_call(value, registry, parent);
+      case AST_NODE_BINARY_EXPRESSION:
+        return graph_builder_binary_expression(value, registry, parent);
+      default:
+        break;
+    }
   }
 }
 void graph_builder_function_call(AST *node, DepNodeRegistry *registry, DepNode *parent) {
@@ -54,7 +68,8 @@ void graph_builder_function_declaration(AST *node, DepNodeRegistry *registry, De
         }
         Symbol *symbol = find_symbol(node->parent, parameter->type);
 
-        // for shit like String etc, we won't get a node. and these don't need to be recoreded since they're built in.
+        // for shit like String, i32 etc, we won't get a node. and these don't need to be recorded since they're built
+        // in.
         if (symbol && symbol->node) {
           add_dep_to_dep_node(dep_node, create_dep_node(symbol->node, registry));
         }
@@ -80,4 +95,3 @@ void graph_builder_type_declaration(AST *node, DepNodeRegistry *registry, DepGra
 
   add_node_to_dep_graph(graph, dep_node);
 }
-
