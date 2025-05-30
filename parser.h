@@ -40,7 +40,7 @@ static const char *Node_Kind_String[] = {
 typedef struct {
   String type;
   String name;
-  bool is_varargs;
+  bool is_vararg;
 } AST_Parameter;
 
 typedef struct {

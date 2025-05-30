@@ -199,7 +199,7 @@ LLVMValueRef emit_forward_declaration(LLVM_Emit_Context *ctx, AST *node) {
     for (int i = 0; i < parameters_length; ++i) {
       AST_Parameter parameter =
           V_AT(AST_Parameter, node->function.parameters, i);
-      if (parameter.is_varargs) {
+      if (parameter.is_vararg) {
         is_varargs = true;
         parameters_length--;
         break;

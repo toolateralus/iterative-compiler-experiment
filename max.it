@@ -1,19 +1,8 @@
+
+fn clamp() {
+
+}
+
 fn main() @entry {
-  i32 clamped = clamp();
-  printf("Hello, World\n");
-  Vector_3 dependent;
-  dependent.xy.y = 50;
-  dependent.xy.x = 100;
-  dependent.z = 200;
-  i32 sum = dependent.xy.y + dependent.xy.x + dependent.z;
-  printf(".xy.x='%d', .xy.y='%d', .z='%d', sum='%d'\n", dependent.xy.x, dependent.xy.y, dependent.z, sum);
+  clamp();
 }
-
-fn clamp() i32 {
-  return 0;
-}
-
-type Vector_3(Vector_2 xy, i32 z);
-type Vector_2(i32 x, i32 y);
-
-fn printf(String, ...) @extern;

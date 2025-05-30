@@ -6,7 +6,7 @@
 #include <stdlib.h>
 
 typedef enum {
-  UNRESOLVED,
+  UNRESOLVED=0,
   RESOLVING,
   RESOLVED,
   ERRORED,

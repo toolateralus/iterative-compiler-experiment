@@ -2,7 +2,9 @@
 #include "core.h"
 #include "graph.h"
 #include "parser.h"
+#include "thir.h"
 #include "typer.h"
+#include "typer2.h"
 #include <stdio.h>
 #include <time.h>
 
@@ -11,8 +13,12 @@ Vector type_table;
 Compilation_Mode COMPILATION_MODE = CM_DEBUG;
 int node_printer_indentation=0;
 
+Arena thir_arena;
+
 void type_check_program(AST program) {
   initialize_type_system();
+
+  arena_init(&thir_arena);
 
   // Find an entry point marked function.
   { 
@@ -54,7 +60,6 @@ void parse_program(Lexer_State *state, AST_Arena *arena, AST *program) {
   }
 }
 
-
 int main(int argc, char *argv[]) {
   if (argc > 1) {
     if (strncmp(argv[1], "-r", 2) == 0) {
@@ -73,6 +78,13 @@ int main(int argc, char *argv[]) {
   DepGraph graph = {0};
   populate_dep_graph(&registry, &graph, &program);
   print_graph(&graph);
+  
+  Vector thir_symbols;
+  arena_init(&thir_arena);
+  vector_init(&thir_symbols, sizeof(THIRSymbol));
+  THIR *thir = generate_thir(&graph, &registry, &thir_symbols);
+
+  pretty_print_thir(thir, 0);
 
   return 0;
 

@@ -44,7 +44,7 @@ Typer_Progress typer_function_declaration(AST *node) {
   for (size_t i = 0; i < node->function.parameters.length; ++i) {
     AST_Parameter *parameter =
         V_PTR_AT(AST_Parameter, node->function.parameters, i);
-    if (parameter->is_varargs) {
+    if (parameter->is_vararg) {
       is_varargs = true;
       continue;
     }

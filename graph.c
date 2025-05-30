@@ -41,7 +41,6 @@ void graph_builder_block(AST *node, DepNodeRegistry *registry, DepNode *parent) 
     }
   }
 }
-
 void graph_builder_function_declaration(AST *node, DepNodeRegistry *registry, DepGraph *graph) {
   DepNode *dep_node = create_dep_node(node, registry);
   add_node_to_dep_graph(graph, dep_node);
@@ -50,7 +49,7 @@ void graph_builder_function_declaration(AST *node, DepNodeRegistry *registry, De
     for (int i = 0; i < node->function.parameters.length; ++i) {
       AST_Parameter *parameter = ((AST_Parameter *)vector_get(&node->function.parameters, i));
       {
-        if (parameter->is_varargs) {
+        if (parameter->is_vararg) {
           continue;
         }
         Symbol *symbol = find_symbol(node->parent, parameter->type);
@@ -69,7 +68,6 @@ void graph_builder_function_declaration(AST *node, DepNodeRegistry *registry, De
 
   graph_builder_block(node->function.block, registry, dep_node);
 }
-
 void graph_builder_type_declaration(AST *node, DepNodeRegistry *registry, DepGraph *graph) {
   DepNode *dep_node = create_dep_node(node, registry);
 

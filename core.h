@@ -87,10 +87,8 @@ typedef struct {
 } Vector;
 
 static void vector_init(Vector *vector, size_t element_size) {
-  vector->data = NULL;
+  memset(vector, 0, sizeof(Vector));
   vector->element_size = element_size;
-  vector->length = 0;
-  vector->capacity = 0;
 }
 
 static void vector_free(Vector *vector) {
@@ -147,7 +145,7 @@ static void *vector_get(Vector *vector, size_t index) {
   if (index >= vector->length) {
     panic("Index out of bounds");
   }
-  return (char *)vector->data + index * vector->element_size;
+  return ((char *)vector->data) + (index * vector->element_size);
 }
 
 typedef enum {
@@ -156,5 +154,41 @@ typedef enum {
 } Compilation_Mode; 
 
 extern Compilation_Mode COMPILATION_MODE;
+
+
+typedef struct Arena {
+  void* data;
+  size_t length;
+  struct Arena *next;
+} Arena;
+
+#define ARENA_ALLOC($arena, $type) ($type*)arena_alloc($arena, sizeof($type))
+
+static inline void arena_init(Arena *arena) {
+  arena->data = malloc(1024 * 512);
+}
+
+static inline void *arena_alloc(Arena *arena, size_t size) {
+  if (arena->length < 1024) {
+    void *data = &arena->data[arena->length];
+    arena->length+=size;
+    return data;
+  } else {
+    if (arena->next == NULL) {
+      arena->next = (Arena *)malloc(sizeof(Arena));
+      *arena->next = (Arena){0};
+      arena_init(arena->next);
+    }
+    return arena_alloc(arena->next, size);
+  }
+}
+
+static void arena_free(Arena *arena) {
+  while (arena != NULL) {
+    Arena *next = arena->next;
+    free(arena);
+    arena = next;
+  }
+}
 
 #endif

@@ -97,7 +97,7 @@ AST *parse_function_declaration(AST_Arena *arena, Lexer_State *state,
       token_eat(state);
       token_eat(state);
       token_eat(state);
-      param.is_varargs = true;
+      param.is_vararg = true;
     } else {
       param.type = token_expect(state, TOKEN_IDENTIFIER).value;
       if (token_peek(state).type != TOKEN_COMMA &&
