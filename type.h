@@ -153,4 +153,50 @@ static void initialize_type_system() {
   create_type(nullptr, (String){.data = "String", .length = 6}, STRING);
 }
 
+
+static String type_to_string(Type *type) {
+  switch (type->kind) {
+    case VOID:
+      return (String){.data = "void", .length = 4};
+    case I32:
+      return (String){.data = "i32", .length = 3};
+    case F32:
+      return (String){.data = "f32", .length = 3};
+    case STRING:
+      return (String){.data = "String", .length = 6};
+    case STRUCT:
+      if (type->name.data && type->name.length > 0)
+        return type->name;
+      else
+        return (String){.data = "struct", .length = 6};
+    case FUNCTION:
+      // Print function type as: (param1, param2, ...) -> return_type
+      static char buffer[256];
+      size_t offset = 0;
+      memcpy(buffer + offset, "fn(", 3);
+      offset+=3;
+      for (size_t i = 0; i < type->$function.parameters.length; ++i) {
+        size_t param_type_id = ((size_t *)type->$function.parameters.data)[i];
+        Type *param_type = get_type(param_type_id);
+        String param_str = type_to_string(param_type);
+        memcpy(buffer + offset, param_str.data, param_str.length);
+        offset += param_str.length;
+        if (i + 1 < type->$function.parameters.length) {
+          buffer[offset++] = ',';
+          buffer[offset++] = ' ';
+        }
+      }
+      buffer[offset++] = ')';
+      buffer[offset++] = ' ';
+      Type *ret_type = get_type(type->$function.$return);
+      String ret_str = type_to_string(ret_type);
+      memcpy(buffer + offset, ret_str.data, ret_str.length);
+      offset += ret_str.length;
+      buffer[offset] = 0;
+      return (String){.data = buffer, .length = offset};
+    default:
+      return (String){.data = "unknown", .length = 7};
+  }
+}
+
 #endif

@@ -1,5 +1,6 @@
 #include "typer2.h"
 #include "thir.h"
+#include "type.h"
 
 bool dep_node_dependencies_resolved(DepNode *node) {
   for (int i = 0; i > node->length; ++i) {
@@ -27,19 +28,23 @@ THIR *generate_thir_from_ast(AST *node, Vector *thir_symbols) {
       THIR *thir = THIR_ALLOC(THIR_IDENTIFIER, node->location);
       THIRSymbol *symbol = find_thir_symbol(thir_symbols, node->identifier);
       thir->identifier = (typeof(thir->identifier)){.name = node->identifier, .resolved = symbol->thir};
+      thir->type = symbol->thir->type;
       return thir;
     } break;
     case AST_NODE_NUMBER: {
       THIR *thir = THIR_ALLOC(THIR_NUMBER, node->location);
       thir->number = node->number;
+      thir->type = I32;
       return thir;
     } break;
     case AST_NODE_STRING: {
       THIR *thir = THIR_ALLOC(THIR_STRING, node->location);
       thir->string = node->string;
+      thir->type = STRING;
       return thir;
     } break;
     case AST_NODE_DOT_EXPRESSION: {
+      // TODO: type this.
       THIR *base = generate_thir_from_ast(node->dot.left, thir_symbols);
       THIR *thir = THIR_ALLOC(THIR_MEMBER_ACCESS, node->location);
       thir->member_access.base = base;
@@ -49,7 +54,7 @@ THIR *generate_thir_from_ast(AST *node, Vector *thir_symbols) {
     case AST_NODE_FUNCTION_CALL: {
       THIRSymbol *symbol = find_thir_symbol(thir_symbols, node->call.name);
       THIR *function = symbol->thir;
-      THIRList args;
+      THIRList args ={0};
       for (int i = 0; i < node->call.arguments.length; ++i) {
         AST *argument = &node->call.arguments.data[i];
         thir_list_push(&args, generate_thir_from_ast(argument, thir_symbols));
@@ -57,10 +62,14 @@ THIR *generate_thir_from_ast(AST *node, Vector *thir_symbols) {
       THIR *thir = THIR_ALLOC(THIR_CALL, node->location);
       thir->call.function = function;
       thir->call.arguments = args;
+      Type *fn_type = get_type(symbol->thir->type);
+      thir->type = fn_type->$function.$return;
+
       return thir;
     } break;
     case AST_NODE_BLOCK: {
       THIR *thir = THIR_ALLOC(THIR_BLOCK, node->location);
+      thir->type = VOID;
       thir->statements = (THIRList){0};
       for (int i = 0; i < node->statements.length; ++i) {
         thir_list_push(&thir->statements, generate_thir_from_ast(node->statements.data[i], thir_symbols));
@@ -75,12 +84,14 @@ THIR *generate_thir_from_ast(AST *node, Vector *thir_symbols) {
       thir->binary.operator= node->binary.operator;
       thir->binary.left = left;
       thir->binary.right = right;
+      thir->type = left->type;
     } break;
     case AST_NODE_RETURN: {
       THIR *thir = THIR_ALLOC(THIR_RETURN, node->location);
       if (node->return_expression) {
         thir->return_expression = generate_thir_from_ast(node->return_expression, thir_symbols);
       }
+      thir->type = VOID;
       return thir;
     } break;
     case AST_NODE_FUNCTION_DECLARATION: {
@@ -89,16 +100,40 @@ THIR *generate_thir_from_ast(AST *node, Vector *thir_symbols) {
         thir->function.block = generate_thir_from_ast(node->function.block, thir_symbols);
       }
 
+      Vector parameter_types;
+      bool is_varargs=false;
+      vector_init(&parameter_types, sizeof(size_t));
       vector_init(&thir->function.parameters, sizeof(THIRParameter));
       for (int i = 0; i < node->function.parameters.length; ++i) {
         AST_Parameter *parameter = &node->function.parameters.data[i];
+
+        size_t type;
+        Type *type_ptr;
+        if (!parameter->is_vararg && (type_ptr = find_type(parameter->type))) {
+          type = type_ptr->id;
+        } else {
+          type = VOID;
+        }
+        vector_push(&parameter_types, &type);
+
+        if (parameter->is_vararg) {
+          is_varargs=true;
+        }
+
         THIRParameter thir_parameter = {
-            .type = find_type(parameter->type)->id,
+            .type = type,
             .name = parameter->name,
             .is_vararg = parameter->is_vararg,
         };
         vector_push(&thir->function.parameters, &thir_parameter);
       }
+
+      Type *return_type = find_type(node->function.return_type);
+
+      bool new;
+      thir->type = create_or_find_function_type(node, return_type->id, parameter_types, is_varargs, &new)->id;
+
+      printf("created new function type for %s?=%s\n", node->function.name.data, new ? "yes" : "no");
 
       thir->function.is_entry = node->function.is_entry;
       thir->function.is_extern = node->function.is_extern;

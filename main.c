@@ -3,6 +3,7 @@
 #include "graph.h"
 #include "parser.h"
 #include "thir.h"
+#include "type.h"
 #include "typer.h"
 #include "typer2.h"
 #include <stdio.h>
@@ -77,13 +78,18 @@ int main(int argc, char *argv[]) {
   DepNodeRegistry registry = {0};
   DepGraph graph = {0};
   populate_dep_graph(&registry, &graph, &program);
+
+  printf("dependency graph:\n");
   print_graph(&graph);
   
   Vector thir_symbols;
   arena_init(&thir_arena);
   vector_init(&thir_symbols, sizeof(THIRSymbol));
+  initialize_type_system();
+  
   THIR *thir = generate_thir(&graph, &registry, &thir_symbols);
 
+  printf("thir:\n");
   pretty_print_thir(thir, 0);
 
   return 0;

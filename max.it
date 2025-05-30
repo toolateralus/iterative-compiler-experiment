@@ -1,8 +1,5 @@
-
-fn clamp() {
-
-}
+fn printf(String, ...) @extern;
 
 fn main() @entry {
-  clamp();
+  printf("Hello, World!");
 }
