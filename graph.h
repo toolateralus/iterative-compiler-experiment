@@ -138,21 +138,7 @@ void graph_builder_binary_expression(AST *node, DepNodeRegistry *registry, DepNo
 void graph_builder_return_statement(AST *node, DepNodeRegistry *registry, DepNode *parent);
 void graph_builder_block(AST *node, DepNodeRegistry *registry, DepNode *parent);
 
-static inline void populate_dep_graph(DepNodeRegistry *registry, DepGraph *graph, AST *root_node) {
-  for (int i = 0; i < root_node->statements.length; ++i) {
-    AST *statement = root_node->statements.data[i];
-    switch (statement->kind) {
-      case AST_NODE_FUNCTION_DECLARATION:
-        graph_builder_function_declaration(statement, registry, graph);
-        break;
-      case AST_NODE_TYPE_DECLARATION:
-        graph_builder_type_declaration(statement, registry, graph);
-        break;
-      default:
-        break;
-    }
-  }
-}
+void populate_dep_graph(DepNodeRegistry *registry, DepGraph *graph, AST *root_node);
 
 extern int node_printer_indentation;
 static inline void print_node(DepNode *node) {

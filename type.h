@@ -31,7 +31,6 @@ typedef struct Type {
   String name;
   Type_Kind kind;
   size_t id;
-  AST *declaring_node;
   LLVMTypeRef llvm_type;
 
   union {
@@ -50,7 +49,6 @@ typedef struct Type {
 static Type *create_type(AST *declaring_node, String name, Type_Kind kind) {
   vector_push(&type_table, &(Type){
                                .name = name,
-                               .declaring_node = declaring_node,
                                .kind = kind,
                                .id = type_table.length,
                            });

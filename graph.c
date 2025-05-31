@@ -22,19 +22,23 @@ void graph_builder_variable_declaration(AST *node, DepNodeRegistry *registry, De
     }
   }
 }
+
 void graph_builder_function_call(AST *node, DepNodeRegistry *registry, DepNode *parent) {
   Symbol *symbol = find_symbol(node->parent, node->call.name);
   add_dep_to_dep_node(parent, create_dep_node(symbol->node, registry));
 }
+
 void graph_builder_binary_expression(AST *node, DepNodeRegistry *registry, DepNode *parent) {
   add_dep_to_dep_node(parent, create_dep_node(node->binary.left, registry));
   add_dep_to_dep_node(parent, create_dep_node(node->binary.right, registry));
 }
+
 void graph_builder_return_statement(AST *node, DepNodeRegistry *registry, DepNode *parent) {
   if (node->return_expression) {
     add_dep_to_dep_node(parent, create_dep_node(node->return_expression, registry));
   }
 }
+
 void graph_builder_block(AST *node, DepNodeRegistry *registry, DepNode *parent) {
   for (int i = 0; i < node->statements.length; ++i) {
     AST *statement = node->statements.data[i];
@@ -55,27 +59,26 @@ void graph_builder_block(AST *node, DepNodeRegistry *registry, DepNode *parent) 
     }
   }
 }
+
 void graph_builder_function_declaration(AST *node, DepNodeRegistry *registry, DepGraph *graph) {
   DepNode *dep_node = create_dep_node(node, registry);
   add_node_to_dep_graph(graph, dep_node);
 
-  {
-    for (int i = 0; i < node->function.parameters.length; ++i) {
-      AST_Parameter *parameter = ((AST_Parameter *)vector_get(&node->function.parameters, i));
-      {
-        if (parameter->is_vararg) {
-          continue;
-        }
-        Symbol *symbol = find_symbol(node->parent, parameter->type);
-
-        // for shit like String, i32 etc, we won't get a node. and these don't need to be recorded since they're built
-        // in.
-        if (symbol && symbol->node) {
-          add_dep_to_dep_node(dep_node, create_dep_node(symbol->node, registry));
-        }
-      }
+  for (int i = 0; i < node->function.parameters.length; ++i) {
+    AST_Parameter *parameter = ((AST_Parameter *)vector_get(&node->function.parameters, i));
+    if (parameter->is_vararg) {
+      continue;
     }
-  };
+
+    Symbol *symbol = find_symbol(node->parent, parameter->type);
+
+    // for shit like String, i32 etc,
+    // we won't get a node. 
+    // also these don't need to be recorded since they're builtin.
+    if (symbol && symbol->node) {
+      add_dep_to_dep_node(dep_node, create_dep_node(symbol->node, registry));
+    }
+  }
 
   if (node->function.is_extern) {
     return;
@@ -83,6 +86,7 @@ void graph_builder_function_declaration(AST *node, DepNodeRegistry *registry, De
 
   graph_builder_block(node->function.block, registry, dep_node);
 }
+
 void graph_builder_type_declaration(AST *node, DepNodeRegistry *registry, DepGraph *graph) {
   DepNode *dep_node = create_dep_node(node, registry);
 
@@ -94,4 +98,20 @@ void graph_builder_type_declaration(AST *node, DepNodeRegistry *registry, DepGra
   });
 
   add_node_to_dep_graph(graph, dep_node);
+}
+
+void populate_dep_graph(DepNodeRegistry *registry, DepGraph *graph, AST *root_node) {
+  for (int i = 0; i < root_node->statements.length; ++i) {
+    AST *statement = root_node->statements.data[i];
+    switch (statement->kind) {
+      case AST_NODE_FUNCTION_DECLARATION:
+        graph_builder_function_declaration(statement, registry, graph);
+        break;
+      case AST_NODE_TYPE_DECLARATION:
+        graph_builder_type_declaration(statement, registry, graph);
+        break;
+      default:
+        break;
+    }
+  }
 }

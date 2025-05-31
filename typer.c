@@ -1,241 +1,432 @@
 #include "typer.h"
+#include <string.h>
 #include "core.h"
+#include "graph.h"
 #include "parser.h"
+#include "thir.h"
 #include "type.h"
-#include <assert.h>
 
-Typer_Progress typer_identifier(AST *node) {
-  if (node->typing_complete)
-    return TYPER_COMPLETE;
-
-  auto symbol = find_symbol(node->parent, node->identifier);
-  if (!symbol) {
-    return TYPER_UNRESOLVED;
-  } else {
-    node->typing_complete = true;
-    node->type = symbol->type;
-    return TYPER_COMPLETE;
-  }
-}
-
-Typer_Progress typer_number(AST *node) {
-  if (node->typing_complete)
-    return TYPER_COMPLETE;
-  node->type = I32;
-  node->typing_complete = true;
-  return TYPER_COMPLETE;
-}
-
-Typer_Progress typer_string(AST *node) {
-  if (node->typing_complete)
-    return TYPER_COMPLETE;
-  node->type = STRING;
-  node->typing_complete = true;
-  return TYPER_COMPLETE;
-}
-
-Typer_Progress typer_function_declaration(AST *node) {
-  if (node->typing_complete)
-    return TYPER_COMPLETE;
-
-  Vector parameter_types;
-  vector_init(&parameter_types, sizeof(size_t));
-  bool is_varargs = false;
-  for (size_t i = 0; i < node->function.parameters.length; ++i) {
-    AST_Parameter *parameter =
-        V_PTR_AT(AST_Parameter, node->function.parameters, i);
-    if (parameter->is_vararg) {
-      is_varargs = true;
-      continue;
+bool dep_node_dependencies_resolved(DepNode *node) {
+  for (int i = 0; i > node->length; ++i) {
+    DepNode *dep = node->dependencies[i];
+    switch (dep->state) {
+      case UNRESOLVED:
+      case RESOLVING:
+        return false;
+      case RESOLVED:
+        break;
+      case ERRORED:
+        printf("error %s\n", dep->error);
+        break;
     }
-
-    Type *param_type = find_type(parameter->type);
-
-    if (!param_type)
-      return TYPER_UNRESOLVED;
-
-    vector_push(&parameter_types, &param_type->id);
-
-    if (node->function.is_extern)
-      continue;
-    insert_symbol(node, parameter->name, node, param_type);
-  }
-
-  auto return_ty = find_type(node->function.return_type);
-
-  if (!return_ty) {
-    return TYPER_UNRESOLVED;
-  }
-
-  if (!node->function.is_extern) {
-    // Resolve the function body
-    Typer_Progress body_progress =
-        typer_resolve(node->function.block);
-    if (body_progress != TYPER_COMPLETE)
-      return TYPER_UNRESOLVED;
-  }
-
-
-
-  bool created;
-  Type *type = create_or_find_function_type(node, return_ty->id, parameter_types, is_varargs, &created);
-
-  // If we didn't create this type, we need to clean up these params.
-  // If we did, these now are owned by the type, we just copy the vector.
-  if (!created) {
-    vector_free(&parameter_types);
-  }
-
-  insert_symbol(node->parent, node->function.name, node, type);
-  node->type = type->id;
-  node->typing_complete = true;
-  return TYPER_COMPLETE;
-}
-
-Typer_Progress typer_type_declaration(AST *node) {
-  if (node->typing_complete)
-    return TYPER_COMPLETE;
-
-  Vector members;
-  vector_init(&members, sizeof(Type_Member));
-  ForEach(AST_Type_Member, member, node->declaration.members, {
-    Type *member_type = find_type(member.type);
-
-    if (!member_type) {
-      vector_free(&members);
-      return TYPER_UNRESOLVED;
+    if (!dep_node_dependencies_resolved(dep)) {
+      return false;
     }
-
-    insert_symbol(node, member.name, node, member_type);
-    Type_Member type_member;
-    type_member.name = member.name;
-    type_member.type = member_type->id;
-    vector_push(&members, &type_member);
-  });
-
-  Type *type = create_type(node, node->declaration.name, STRUCT);
-  type->$struct.members = members;
-
-  node->type = VOID;
-  node->typing_complete = true;
-  return TYPER_COMPLETE;
+  }
+  return true;
 }
 
-Typer_Progress typer_variable_declaration(AST *node) {
-  if (node->typing_complete)
-    return TYPER_COMPLETE;
+THIR *generate_thir_from_ast(AST *node, Vector *thir_symbols) {
+  if (!node) {
+    panic("Null node in 'generate_thir_from_ast'");
+  }
+  switch (node->kind) {
+    case AST_NODE_IDENTIFIER: {
+      THIR *thir = THIR_ALLOC(THIR_IDENTIFIER, node->location);
+      THIRSymbol *symbol = find_thir_symbol(thir_symbols, node->identifier);
+      thir->identifier = (typeof(thir->identifier)){.name = node->identifier, .resolved = symbol->thir};
+      thir->type = symbol->thir->type;
+      return thir;
+    } break;
+    case AST_NODE_NUMBER: {
+      THIR *thir = THIR_ALLOC(THIR_NUMBER, node->location);
+      thir->number = node->number;
+      thir->type = I32;
+      return thir;
+    } break;
+    case AST_NODE_STRING: {
+      THIR *thir = THIR_ALLOC(THIR_STRING, node->location);
+      thir->string = node->string;
+      thir->type = STRING;
+      return thir;
+    } break;
+    case AST_NODE_DOT_EXPRESSION: {
+      THIR *base = generate_thir_from_ast(node->dot.left, thir_symbols);
+      THIR *thir = THIR_ALLOC(THIR_MEMBER_ACCESS, node->location);
+      thir->member_access.base = base;
+      thir->member_access.member = node->dot.member_name;
 
-  typeof(node->variable) *decl = &node->variable;
+      Type *base_type = get_type(base->type);
 
-  Typer_Progress value_progress = TYPER_COMPLETE;
-  if (decl->value)
-    value_progress = typer_resolve(decl->value);
+      thir->type = -1;
+      for (int i = 0; i < base_type->$struct.members.length; ++i) {
+        Type_Member member = V_AT(Type_Member, base_type->$struct.members, i);
+        if (Strings_compare(member.name, node->dot.member_name)) {
+          thir->type = member.type;
+          break;
+        }
+      }
 
-  if (value_progress != TYPER_COMPLETE)
-    return TYPER_UNRESOLVED;
+      if (thir->type == -1) {
+        parse_panicf(node->location, "unable to find member '%s' in type '%s'", node->dot.member_name.data,
+                     base_type->name.data);
+      }
 
-  Type *type = find_type(decl->type);
-  if (!type)
-    return TYPER_UNRESOLVED;
+      return thir;
+    } break;
+    case AST_NODE_FUNCTION_CALL: {
+      THIRSymbol *symbol = find_thir_symbol(thir_symbols, node->call.name);
+      if (!symbol) {
+        parse_panicf(node->location, "use of undeclared function '%s'", node->call.name.data);
+      }
 
-  if (decl->value)
-    assert(decl->value->type == type->id && "Invalid type in declaration");
+      THIR *function = symbol->thir;
+      THIR *thir = THIR_ALLOC(THIR_CALL, node->location);
+      for (int i = 0; i < node->call.arguments.length; ++i) {
+        AST *argument = V_AT(AST *, node->call.arguments, i);
+        THIR *thir_arg = generate_thir_from_ast(argument, thir_symbols);
+        thir_list_push(&thir->call.arguments, thir_arg);
+      }
+      thir->call.function = function;
+      Type *fn_type = get_type(symbol->thir->type);
+      thir->type = fn_type->$function.$return;
 
-  insert_symbol(node->parent, decl->name, node, type);
+      return thir;
+    } break;
+    case AST_NODE_BLOCK: {
+      THIR *thir = THIR_ALLOC(THIR_BLOCK, node->location);
+      thir->type = VOID;
+      thir->statements = (THIRList){0};
+      for (int i = 0; i < node->statements.length; ++i) {
+        thir_list_push(&thir->statements, generate_thir_from_ast(node->statements.data[i], thir_symbols));
+      }
+      return thir;
+    } break;
+    case AST_NODE_BINARY_EXPRESSION: {
+      THIR *left = generate_thir_from_ast(node->binary.left, thir_symbols);
+      THIR *right = generate_thir_from_ast(node->binary.right, thir_symbols);
 
-  node->type = VOID;
-  node->typing_complete = true;
-  return TYPER_COMPLETE;
+      THIR *thir = THIR_ALLOC(THIR_BINARY_EXPRESSION, node->location);
+      thir->binary.operator= node->binary.operator;
+      thir->binary.left = left;
+      thir->binary.right = right;
+      thir->type = left->type;
+      return thir;
+    } break;
+    case AST_NODE_RETURN: {
+      THIR *thir = THIR_ALLOC(THIR_RETURN, node->location);
+      if (node->return_expression) {
+        thir->return_expression = generate_thir_from_ast(node->return_expression, thir_symbols);
+      }
+      thir->type = VOID;
+      return thir;
+    } break;
+    case AST_NODE_FUNCTION_DECLARATION: {
+      THIR *thir = THIR_ALLOC(THIR_FUNCTION, node->location);
+      thir->function.llvm_function = NULL;
+
+      if (node->function.block) {
+        thir->function.block = generate_thir_from_ast(node->function.block, thir_symbols);
+      }
+
+      Vector parameter_types;
+      bool is_varargs = false;
+      vector_init(&parameter_types, sizeof(size_t));
+      vector_init(&thir->function.parameters, sizeof(THIRParameter));
+
+      for (int i = 0; i < node->function.parameters.length; ++i) {
+        AST_Parameter *parameter = V_PTR_AT(AST_Parameter, node->function.parameters, i);
+
+        size_t type;
+        Type *type_ptr;
+        if (!parameter->is_vararg && (type_ptr = find_type(parameter->type))) {
+          type = type_ptr->id;
+        } else {
+          type = VOID;
+        }
+
+        if (parameter->is_vararg) {
+          is_varargs = true;
+        } else {
+          vector_push(&parameter_types, &type);
+        }
+
+        vector_push(&thir->function.parameters, &(THIRParameter){
+                                                    .type = type,
+                                                    .name = parameter->name,
+                                                    .is_vararg = parameter->is_vararg,
+                                                });
+      }
+
+      Type *return_type = find_type(node->function.return_type);
+
+      bool new;
+      thir->type = create_or_find_function_type(node, return_type->id, parameter_types, is_varargs, &new)->id;
+
+      thir->function.is_entry = node->function.is_entry;
+      thir->function.is_extern = node->function.is_extern;
+      thir->function.name = node->function.name;
+
+      vector_push(thir_symbols, &(THIRSymbol){
+                                    .thir = thir,
+                                    .name = node->function.name,
+                                });
+
+      return thir;
+    } break;
+    case AST_NODE_TYPE_DECLARATION: {
+      THIR *thir = THIR_ALLOC(THIR_TYPE_DECLARATION, node->location);
+      Type *new_type = create_type(node, node->declaration.name, STRUCT);
+      vector_init(&thir->type_declaration.members, sizeof(THIRMember));
+      thir->type_declaration.name = node->declaration.name;
+      for (int i = 0; i < node->declaration.members.length; ++i) {
+        AST_Type_Member member = V_AT(AST_Type_Member, node->declaration.members, i);
+        THIRMember thir_member = {.type = find_type(member.type)->id, .name = member.name};
+
+        vector_push(&new_type->$struct.members, &(Type_Member){
+                                                    .name = thir_member.name,
+                                                    .type = thir_member.type,
+                                                });
+      }
+
+      vector_push(thir_symbols, &(THIRSymbol){
+                                    .thir = thir,
+                                    .name = node->declaration.name,
+                                });
+      thir->type = new_type->id;
+      return thir;
+    } break;
+    case AST_NODE_VARIABLE_DECLARATION: {
+      THIR *thir = THIR_ALLOC(THIR_VARIABLE_DECLARATION, node->location);
+
+      size_t expected_type = find_type(node->variable.type)->id;
+      thir->variable.name = node->variable.name;
+
+      if (node->variable.value) {
+        thir->variable.value = generate_thir_from_ast(node->variable.value, thir_symbols);
+
+        size_t expr_type = thir->variable.value->type;
+        if (expected_type != expr_type) {
+          parse_panic(node->location, "invalid type in variable declaration");
+        }
+
+      } else {
+        thir->variable.value = NULL;
+      }
+
+      thir->type = expected_type;
+      vector_push(thir_symbols, &(THIRSymbol){
+                                    .name = node->variable.name,
+                                    .thir = thir,
+                                });
+      return thir;
+    } break;
+    case AST_NODE_PROGRAM:
+      return nullptr;
+  }
+  return nullptr;
 }
 
-Typer_Progress typer_dot_expression(AST *node) {
-  if (node->typing_complete)
-    return TYPER_COMPLETE;
+void generate_thir_for_node(DepNode *node, Vector *thir_symbols, THIR *program) {
+  if (node->state == RESOLVED) return;
 
-  typer_resolve(node->dot.left);
-  Type *left_type = get_type(node->dot.left->type);
-
-  if (!left_type)
-    return TYPER_UNRESOLVED;
-
-  Type_Member *member = find_member(left_type, node->dot.member_name);
-
-  if (!member) 
-    parse_panicf(node->location, "cannot find member %s in type %s", node->dot.member_name.data, left_type->name.data);
-
-  node->type = member->type;
-  node->typing_complete = true;
-  return TYPER_COMPLETE;
-}
-
-Typer_Progress typer_function_call(AST *node) {
-  if (node->typing_complete)
-    return TYPER_COMPLETE;
-
-  Symbol *symbol = find_symbol(node->parent, node->call.name);
-
-  if (!symbol)
-    return TYPER_UNRESOLVED;
-
-  Type *type = get_type(symbol->type);
-
-  assert(type->kind == FUNCTION && "Attempted to call a non-function type");
-
-  typeof(type->$function) function_type = type->$function;
-
-  if ((node->call.arguments.length != function_type.parameters.length) && !function_type.is_varargs) 
-    parse_panicf(node->location, "expected #%d arguments, got #%d", function_type.parameters.length, node->call.arguments.length);
-
-  // TODO: type check arguments,
-  // TODO: the challenge is handling varargs.
-  for (size_t i = 0; i < node->call.arguments.length; ++i) {
-    Typer_Progress arg_progress =
-        typer_resolve(V_AT(AST *, node->call.arguments, i));
-    if (arg_progress != TYPER_COMPLETE)
-      return TYPER_UNRESOLVED;
+  if (node->state == RESOLVING) {
+    parse_panic(node->ast_node->location, "cyclic dependency detected");
+    return;
   }
 
-  node->type = type->$function.$return;
-  node->typing_complete = true;
-  return TYPER_COMPLETE;
-}
+  node->state = RESOLVING;
 
-Typer_Progress typer_binary_expression(AST *node) {
-  if (node->typing_complete)
-    return TYPER_COMPLETE;
-
-  Typer_Progress left_progress = typer_resolve(node->binary.left);
-  if (left_progress != TYPER_COMPLETE)
-    return TYPER_UNRESOLVED;
-
-  Typer_Progress right_progress = typer_resolve(node->binary.right);
-  if (right_progress != TYPER_COMPLETE)
-    return TYPER_UNRESOLVED;
-
-  if (node->binary.left->type != node->binary.right->type) {
-    fprintf(stderr, "invalid types in binary expression\n");
-    exit(1);
+  for (size_t i = 0; i < node->length; ++i) {
+    generate_thir_for_node(node->dependencies[i], thir_symbols, program);
   }
 
-  node->type = node->binary.left->type;
-  node->typing_complete = true;
-  return TYPER_COMPLETE;
+  THIR *thir = generate_thir_from_ast(node->ast_node, thir_symbols);
+  thir_list_push(&program->statements, thir);
+
+  node->state = RESOLVED;
 }
 
-Typer_Progress typer_block(AST *node) {
-  if (node->typing_complete)
-    return TYPER_COMPLETE;
-  // Resolve each statement in the block
-  for (size_t i = 0; i < node->statements.length; ++i) {
-    Typer_Progress stmt_progress = typer_resolve(node->statements.data[i]);
-    if (stmt_progress != TYPER_COMPLETE)
-      return TYPER_UNRESOLVED;
+THIR *generate_thir(DepGraph *graph, DepNodeRegistry *registry, Vector *thir_symbols) {
+  THIR *program = THIR_ALLOC(THIR_PROGRAM, (Source_Location){0});
+  size_t n = graph->length;
+  size_t *in_degree = calloc(n, sizeof(size_t));
+
+  size_t processed = 0;
+  size_t qlen = 0;
+  DepNode **queue = malloc(n * sizeof(DepNode *));
+
+  // Count in-degrees (num deps per branch)
+  for (size_t i = 0; i < n; ++i) {
+    in_degree[i] = graph->nodes[i]->length;
   }
-  node->typing_complete = true;
-  return TYPER_COMPLETE;
+
+  // Queue initial nodes, those with 0 deps.
+  for (size_t i = 0; i < n; ++i) {
+    if (in_degree[i] == 0) {
+      queue[qlen++] = graph->nodes[i];
+    }
+  }
+
+  while (processed < qlen) {
+    DepNode *node = queue[processed++];
+    generate_thir_for_node(node, thir_symbols, program);
+
+    // For each node that depends on this node, decrement in-degree
+    for (size_t i = 0; i < n; ++i) {
+      DepNode *other = graph->nodes[i];
+      for (size_t j = 0; j < other->length; ++j) {
+        if (other->dependencies[j] == node) {
+          if (--in_degree[i] == 0) {
+            queue[qlen++] = other;
+          }
+        }
+      }
+    }
+  }
+
+  free(in_degree);
+  free(queue);
+
+  // Ensure all nodes are processed (handles disconnected components/cycles)
+  for (size_t i = 0; i < n; ++i) {
+    if (graph->nodes[i]->state != RESOLVED) {
+      generate_thir_for_node(graph->nodes[i], thir_symbols, program);
+    }
+  }
+
+  return program;
 }
 
-Typer_Progress typer_return_statement(AST *node) {
-  if (node->return_expression) return typer_resolve(node->return_expression);
-  return TYPER_COMPLETE;
+void pretty_print_thir(THIR *thir, int indent) {
+  if (!thir) {
+    print_indent(indent);
+    printf("<null>\n");
+    return;
+  }
+
+  print_indent(indent);
+  printf("<kind=(%d :: %s), type=(%s)>\n", thir->kind, thir_kind_to_string(thir->kind),
+         type_to_string(get_type(thir->type)).data);
+
+  switch (thir->kind) {
+    case THIR_PROGRAM:
+    case THIR_BLOCK:
+      for (size_t i = 0; i < thir->statements.length; ++i) {
+        pretty_print_thir(thir->statements.nodes[i], indent + 1);
+      }
+      break;
+
+    case THIR_BINARY_EXPRESSION:
+      pretty_print_thir(thir->binary.left, indent + 1);
+      print_indent(indent + 1);
+      printf("<operator :: '%s'>\n", Token_Type_Name(thir->binary.operator));
+      pretty_print_thir(thir->binary.right, indent + 1);
+      break;
+
+    case THIR_CALL:
+      print_indent(indent + 1);
+      printf("<function :: %s>\n", thir->call.function->function.name.data);
+      print_indent(indent + 1);
+      printf("<args>\n");
+      for (size_t i = 0; i < thir->call.arguments.length; ++i) {
+        pretty_print_thir(thir->call.arguments.nodes[i], indent + 2);
+      }
+      break;
+
+    case THIR_MEMBER_ACCESS:
+      print_indent(indent + 1);
+      printf("<base>\n");
+      pretty_print_thir(thir->member_access.base, indent + 2);
+      print_indent(indent + 1);
+      printf("<member> ");
+      print_string(thir->member_access.member);
+      printf("\n");
+      break;
+
+    case THIR_IDENTIFIER:
+      print_indent(indent + 1);
+      printf("Identifier: ");
+      print_string(thir->identifier.name);
+      printf("\n");
+      break;
+
+    case THIR_NUMBER:
+      print_indent(indent + 1);
+      printf("Number: ");
+      print_string(thir->number);
+      printf("\n");
+      break;
+
+    case THIR_STRING:
+      print_indent(indent + 1);
+      printf("String: ");
+      print_string(thir->string);
+      printf("\n");
+      break;
+
+    case THIR_RETURN:
+      print_indent(indent + 1);
+      printf("Return\n");
+      pretty_print_thir(thir->return_expression, indent + 2);
+      break;
+
+    case THIR_FUNCTION:
+      print_indent(indent + 1);
+      printf("Function: ");
+      print_string(thir->function.name);
+      printf("%s%s\n", thir->function.is_extern ? " [extern]" : "", thir->function.is_entry ? " [entry]" : "");
+      print_indent(indent + 1);
+      printf("<params>\n");
+      for (size_t i = 0; i < thir->function.parameters.length; ++i) {
+        THIRParameter *param = V_PTR_AT(THIRParameter, thir->function.parameters, i);
+        print_indent(indent + 2);
+        print_string(param->name);
+        printf(" : %zu%s\n", param->type, param->is_vararg ? " (vararg)" : "");
+      }
+      print_indent(indent + 1);
+      printf("<block>\n");
+      pretty_print_thir(thir->function.block, indent + 2);
+      break;
+
+    case THIR_TYPE_DECLARATION:
+      print_indent(indent + 1);
+      printf("Type: ");
+      print_string(thir->type_declaration.name);
+      printf("\n");
+      for (size_t i = 0; i < thir->type_declaration.members.length; ++i) {
+        THIRMember *member = V_PTR_AT(THIRMember, thir->type_declaration.members, i);
+        print_indent(indent + 2);
+        print_string(member->name);
+        printf(" : %zu\n", member->type);
+      }
+      break;
+
+    case THIR_VARIABLE_DECLARATION:
+      print_indent(indent + 1);
+      printf("Variable: ");
+      print_string(thir->variable.name);
+      printf("\n");
+      if (thir->variable.value) {
+        print_indent(indent + 2);
+        printf("Value:\n");
+        pretty_print_thir(thir->variable.value, indent + 3);
+      }
+      break;
+
+    default:
+      print_indent(indent + 1);
+      printf("<unknown THIR kind>\n");
+      break;
+  }
+}
+
+const char *thir_kind_to_string(THIRKind type) {
+  switch (type) {
+    THIRTypeNameCase(THIR_PROGRAM) THIRTypeNameCase(THIR_BLOCK) THIRTypeNameCase(THIR_BINARY_EXPRESSION)
+        THIRTypeNameCase(THIR_CALL) THIRTypeNameCase(THIR_MEMBER_ACCESS) THIRTypeNameCase(THIR_IDENTIFIER)
+            THIRTypeNameCase(THIR_NUMBER) THIRTypeNameCase(THIR_STRING) THIRTypeNameCase(THIR_RETURN)
+                THIRTypeNameCase(THIR_FUNCTION) THIRTypeNameCase(THIR_TYPE_DECLARATION)
+                    THIRTypeNameCase(THIR_VARIABLE_DECLARATION) default : return "INVALID_THIR_KIND";
+  }
 }

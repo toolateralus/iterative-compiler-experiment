@@ -2,6 +2,7 @@
 #ifndef THIR_H
 #define THIR_H
 
+#include <llvm-c/Types.h>
 #include "core.h"
 #include "lexer.h"
 
@@ -86,6 +87,7 @@ typedef struct THIR {
       bool is_extern, is_entry;
       THIR *block;
       Vector parameters;
+      LLVMValueRef llvm_function;
     } function;
 
     struct {

@@ -5,7 +5,6 @@
 #include "thir.h"
 #include "type.h"
 #include "typer.h"
-#include "typer2.h"
 #include <stdio.h>
 #include <time.h>
 
@@ -16,39 +15,6 @@ int node_printer_indentation = 0;
 
 Arena thir_arena;
 
-void type_check_program(AST program) {
-  initialize_type_system();
-
-  arena_init(&thir_arena);
-
-  // Find an entry point marked function.
-  {
-    AST *entry_point = nullptr;
-    for (int i = 0; i < program.statements.length; ++i) {
-      AST *statement = program.statements.data[i];
-      if (statement->kind == AST_NODE_FUNCTION_DECLARATION && statement->function.is_entry) {
-        entry_point = statement;
-        break;
-      }
-    }
-
-    if (!entry_point) {
-      panic(
-          "Unable to find entry point. Be sure to mark one of your functions "
-          "with `fn ...() @entry { ... }` the `@entry` @tribute :D");
-    }
-  }
-
-  while (1) {
-    bool done = true;
-    for (int i = 0; i < program.statements.length; ++i) {
-      if (typer_resolve(program.statements.data[i]) == TYPER_UNRESOLVED) {
-        done = false;
-      }
-    }
-    if (done) break;
-  }
-}
 
 void parse_program(Lexer_State *state, AST_Arena *arena, AST *program) {
   lexer_state_populate_lookahead_buffer(state);
@@ -73,35 +39,48 @@ int main(int argc, char *argv[]) {
 
   TIME_REGION("parsed", { parse_program(&state, &arena, &program); });
 
+  
+
   DepNodeRegistry registry = {0};
   DepGraph graph = {0};
-  populate_dep_graph(&registry, &graph, &program);
+  TIME_REGION("create dependency graph", { 
+    populate_dep_graph(&registry, &graph, &program);
+  });
 
-  printf("dependency graph:\n");
-  print_graph(&graph);
+
+  if (1) {
+    printf("dependency graph:\n");
+    print_graph(&graph);
+  }
+
 
   Vector thir_symbols;
   arena_init(&thir_arena);
   vector_init(&thir_symbols, sizeof(THIRSymbol));
   initialize_type_system();
 
-  THIR *thir = generate_thir(&graph, &registry, &thir_symbols);
+  THIR *thir;
+  TIME_REGION("generating THIR", {
+    thir = generate_thir(&graph, &registry, &thir_symbols);
+  });
 
-  printf("thir:\n");
-  pretty_print_thir(thir, 0);
-
-  return 0;
-
-  TIME_REGION("completed type checking", { type_check_program(program); });
+  if (0) {
+    printf("thir:\n\033[0;34m");
+    pretty_print_thir(thir, 0);
+    printf("\033[0m");
+  }
 
   TIME_REGION("generated LLVM IR", {
     LLVM_Emit_Context ctx;
-    emit_program(&ctx, &program);
+    emit_thir_program(&ctx, thir);
   });
-
+  
   TIME_REGION("compiled LLVM IR", { system("clang -g -lc generated/output.ll -o generated/output"); });
 
   TIME_REGION("executed 'generated/output' binary", { system("./generated/output"); });
+  return 0;
+  
+
 
   free_lexer_state(&state);
   return 0;

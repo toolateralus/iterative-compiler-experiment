@@ -1,10 +1,9 @@
 #include "backend.h"
 #include "core.h"
 #include "lexer.h"
-#include "parser.h"
+#include "thir.h"
 #include "type.h"
 #include <llvm-c/Core.h>
-#include <llvm-c/DebugInfo.h>
 #include <llvm-c/Error.h>
 #include <llvm-c/TargetMachine.h>
 #include <llvm-c/Transforms/PassBuilder.h>
@@ -22,64 +21,123 @@ static void print_value(LLVMValueRef value) {
   LLVMDisposeMessage(value_str);
 }
 
-// Be very careful using this macro, it can't have do { } while(0) semantic
-// because it's very likely to be used to declare some variables.
-#define DONT_LOAD(old_state, ctx, block)                                       \
-  bool old_state = ctx->dont_load;                                             \
-  ctx->dont_load = true;                                                       \
+static inline char *unescape_string_lit(const char *s) {
+  size_t len = strlen(s);
+  char *res = (char *)malloc(len + 1);
+  char *dst = res;
+  const char *src = s;
+  while (*src) {
+    if (*src == '\\') {
+      src++;
+      switch (*src) {
+        case 'e':
+          *dst++ = '\x1B';
+          break;
+        case 'n':
+          *dst++ = '\n';
+          break;
+        case 't':
+          *dst++ = '\t';
+          break;
+        case 'r':
+          *dst++ = '\r';
+          break;
+        case 'f':
+          *dst++ = '\f';
+          break;
+        case 'v':
+          *dst++ = '\v';
+          break;
+        case 'a':
+          *dst++ = '\a';
+          break;
+        case 'b':
+          *dst++ = '\b';
+          break;
+        case '\\':
+          *dst++ = '\\';
+          break;
+        case '\'':
+          *dst++ = '\'';
+          break;
+        case '\"':
+          *dst++ = '\"';
+          break;
+        case '\?':
+          *dst++ = '\?';
+          break;
+        case '0':
+          *dst++ = '\0';
+          break;
+        default:
+          *dst++ = '\\';
+          *dst++ = *src;
+          break;
+      }
+    } else {
+      *dst++ = *src;
+    }
+    src++;
+  }
+  *dst = '\0';
+  return res;
+}
+
+#define DONT_LOAD(old_state, ctx, block) \
+  bool old_state = ctx->dont_load;       \
+  ctx->dont_load = true;                 \
   block ctx->dont_load = old_state;
 
 LLVMTypeRef to_llvm_type(LLVM_Emit_Context *ctx, Type *type) {
-  if (type->llvm_type)
-    return type->llvm_type;
-
+  if (type->llvm_type) return type->llvm_type;
   switch (type->kind) {
-  case VOID: {
-    static LLVMTypeRef type;
-    if (!type)
-      type = LLVMVoidType();
-    return type;
-  }
-  case STRING: {
-    static LLVMTypeRef type;
-    if (!type)
-      type = LLVMPointerType(LLVMInt8Type(), 0);
-    return type;
-  }
-  case I32: {
-    static LLVMTypeRef type;
-    if (!type)
-      type = LLVMInt32Type();
-    return type;
-  }
-  // TODO: add option for packed struct?
-  case STRUCT: {
-    type->llvm_type = LLVMStructCreateNamed(ctx->context, type->name.data);
-    LLVMTypeRef elements[type->$struct.members.length];
-    ForEach(Type_Member, member, type->$struct.members, {
-      elements[i] = to_llvm_type(ctx, V_PTR_AT(Type, type_table, member.type));
-    });
-    LLVMStructSetBody(type->llvm_type, elements, type->$struct.members.length,
-                      false);
-    return type->llvm_type;
-  };
-  case FUNCTION: {
-    LLVMTypeRef return_type =
-        to_llvm_type(ctx, get_type(type->$function.$return));
-    LLVMTypeRef param_types[type->$function.parameters.length];
-    for (int i = 0; i < type->$function.parameters.length; ++i) {
-      param_types[i] = to_llvm_type(ctx, V_PTR_AT(Type, type_table, i));
+    case VOID: {
+      static LLVMTypeRef type;
+      if (!type) type = LLVMVoidType();
+      return type;
     }
-    type->llvm_type = LLVMFunctionType(
-        return_type, param_types, type->$function.parameters.length, false);
-    return type->llvm_type;
-  }
-  case F32:
-    return LLVMFloatType();
+    case STRING: {
+      static LLVMTypeRef type;
+      if (!type) type = LLVMPointerType(LLVMInt8Type(), 0);
+      return type;
+    }
+    case I32: {
+      static LLVMTypeRef type;
+      if (!type) type = LLVMInt32Type();
+      return type;
+    }
+    case STRUCT: {
+      type->llvm_type = LLVMStructCreateNamed(ctx->context, type->name.data);
+      LLVMTypeRef elements[type->$struct.members.length];
+      ForEach(Type_Member, member, type->$struct.members,
+              { elements[i] = to_llvm_type(ctx, V_PTR_AT(Type, type_table, member.type)); });
+      LLVMStructSetBody(type->llvm_type, elements, type->$struct.members.length, false);
+      return type->llvm_type;
+    }
+    case FUNCTION: {
+      LLVMTypeRef return_type = to_llvm_type(ctx, get_type(type->$function.$return));
+      size_t params_size = type->$function.parameters.length;
+
+      if (type->$function.is_varargs) {
+        params_size--;
+      }
+
+      LLVMTypeRef param_types[params_size];
+      for (int i = 0; i < type->$function.parameters.length; ++i) {
+        param_types[i] = to_llvm_type(ctx, get_type(V_AT(size_t, type->$function.parameters, i)));
+      }
+
+      type->llvm_type = LLVMFunctionType(return_type, param_types, type->$function.parameters.length, false);
+      return type->llvm_type;
+    }
+    case F32:
+      return LLVMFloatType();
   }
 }
 
-LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
+LLVMValueRef emit_thir_node(LLVM_Emit_Context *ctx, THIR *node);
+
+LLVMValueRef emit_thir_program(LLVM_Emit_Context *ctx, THIR *program) {
   ctx->context = LLVMContextCreate();
   ctx->builder = LLVMCreateBuilderInContext(ctx->context);
   ctx->module = LLVMModuleCreateWithNameInContext("program", ctx->context);
@@ -104,70 +162,25 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
   LLVMCodeGenOptLevel opt_level = LLVMCodeGenLevelDefault;
 
   LLVMTargetMachineRef machine =
-      LLVMCreateTargetMachine(target, target_triple, cpu, features, opt_level,
-                              LLVMRelocPIC, LLVMCodeModelDefault);
+      LLVMCreateTargetMachine(target, target_triple, cpu, features, opt_level, LLVMRelocPIC, LLVMCodeModelDefault);
 
   ctx->target_data = LLVMCreateTargetDataLayout(machine);
 
-  LLVMDIBuilderRef di_builder = LLVMCreateDIBuilder(ctx->module);
-
-  const char * source_dir = "/home/josh_arch/source/c/iterative-compiler/";
-  int dir_length = strlen(source_dir);
-  const char * source_file = "max.it";
-  int file_length = strlen(source_file);
-  LLVMMetadataRef di_file =
-      LLVMDIBuilderCreateFile(di_builder, source_file, file_length, source_dir, dir_length);
-
-  ctx->di_builder = di_builder;
-  ctx->di_file = di_file;
-
-  LLVMMetadataRef compile_unit = LLVMDIBuilderCreateCompileUnit(
-      di_builder, LLVMDWARFSourceLanguageC, di_file, "Iterative", 9, 0, "", 0,
-      0, 0, 0, LLVMDWARFEmissionFull, 0, 0, 0, "", 0, "", 0);
-
-  LLVMValueRef debug_info_version_value =
-      LLVMConstInt(LLVMInt32TypeInContext(ctx->context), 3, 0);
-  LLVMMetadataRef debug_info_version_metadata =
-      LLVMValueAsMetadata(debug_info_version_value);
-  LLVMAddModuleFlag(ctx->module, LLVMModuleFlagBehaviorWarning,
-                    "Debug Info Version", 18, debug_info_version_metadata);
-
-  LLVMValueRef dwarf_version_value =
-      LLVMConstInt(LLVMInt32TypeInContext(ctx->context), 4, 0);
-  LLVMMetadataRef dwarf_version_metadata =
-      LLVMValueAsMetadata(dwarf_version_value);
-  LLVMAddModuleFlag(ctx->module, LLVMModuleFlagBehaviorWarning, "Dwarf Version",
-                    12, dwarf_version_metadata);
-
-  { // GENERATE THE CODE BY VISITING THE AST
-    for (int i = 0; i < program->statements.length; ++i) {
-      AST *statement = program->statements.data[i];
-      if (statement->kind == AST_NODE_TYPE_DECLARATION)
-        emit_type_declaration(ctx, program->statements.data[i]);
-    }
-
-    for (int i = 0; i < program->statements.length; ++i) {
-      AST *statement = program->statements.data[i];
-      if (statement->kind == AST_NODE_FUNCTION_DECLARATION)
-        emit_forward_declaration(ctx, program->statements.data[i]);
-    }
-
-    for (int i = 0; i < program->statements.length; ++i) {
-      AST *statement = program->statements.data[i];
-      emit_node(ctx, program->statements.data[i]);
+  for (size_t i = 0; i < program->statements.length; ++i) {
+    THIR *node = program->statements.nodes[i];
+    if (node->kind == THIR_FUNCTION && node->function.is_entry) {
+      emit_thir_node(ctx, node);
+      break;
     }
   }
-    
+
   if (COMPILATION_MODE == CM_RELEASE) {
     const char *passes = "default<O3>";
     LLVMPassBuilderOptionsRef options = LLVMCreatePassBuilderOptions();
-    // LLVMPassBuilderOptionsSetVerifyEach(options, true); // Why can we not
-    // verify? something is broken.
     LLVMErrorRef pass_error;
     if ((pass_error = LLVMRunPasses(ctx->module, passes, machine, options))) {
       char *message = LLVMGetErrorMessage(pass_error);
       fprintf(stderr, "Error running passes :: %s\n", message);
-      ;
       exit(1);
     }
     LLVMDisposePassBuilderOptions(options);
@@ -186,37 +199,38 @@ LLVMValueRef emit_program(LLVM_Emit_Context *ctx, AST *program) {
   return nullptr;
 }
 
-LLVMValueRef emit_forward_declaration(LLVM_Emit_Context *ctx, AST *node) {
-  LLVMTypeRef return_type =
-      to_llvm_type(ctx, find_type(node->function.return_type));
+LLVMValueRef emit_thir_function_forward_declaration(LLVM_Emit_Context *ctx, THIR *node) {
+  if (node->function.llvm_function) {
+    return node->function.llvm_function;
+  }
+  Type *fn_ty = get_type(node->type);
+  LLVMTypeRef return_type = to_llvm_type(ctx, get_type(fn_ty->$function.$return));
   LLVMTypeRef *param_types = NULL;
   size_t parameters_length = node->function.parameters.length;
   bool is_varargs = false;
 
   if (parameters_length > 0) {
-    param_types =
-        (LLVMTypeRef *)malloc(sizeof(LLVMTypeRef) * parameters_length);
+    param_types = (LLVMTypeRef *)malloc(sizeof(LLVMTypeRef) * parameters_length);
     for (int i = 0; i < parameters_length; ++i) {
-      AST_Parameter parameter =
-          V_AT(AST_Parameter, node->function.parameters, i);
+      THIRParameter parameter = V_AT(THIRParameter, node->function.parameters, i);
       if (parameter.is_vararg) {
         is_varargs = true;
         parameters_length--;
         break;
       } else {
-        param_types[i] = to_llvm_type(ctx, find_type(parameter.type));
+        param_types[i] = to_llvm_type(ctx, get_type(parameter.type));
       }
     }
   }
 
-  LLVMTypeRef function_type =
-      LLVMFunctionType(return_type, param_types, parameters_length, is_varargs);
-  LLVMValueRef function =
-      LLVMAddFunction(ctx->module, node->function.name.data, function_type);
+  LLVMTypeRef function_type = LLVMFunctionType(return_type, param_types, parameters_length, is_varargs);
 
-  Symbol *symbol = find_symbol(node, node->function.name);
-  symbol->llvm_value = function;
-  symbol->llvm_function_type = function_type;
+  LLVMValueRef function = LLVMGetNamedFunction(ctx->module, node->function.name.data);
+  if (!function) {
+    function = LLVMAddFunction(ctx->module, node->function.name.data, function_type);
+  }
+  
+  node->function.llvm_function = function;
 
   if (param_types) {
     free(param_types);
@@ -225,377 +239,206 @@ LLVMValueRef emit_forward_declaration(LLVM_Emit_Context *ctx, AST *node) {
   return function;
 }
 
-LLVMValueRef emit_function_declaration(LLVM_Emit_Context *ctx, AST *node) {
-  if (!node->function.is_extern) {
-    LLVMValueRef function = find_symbol(node, node->function.name)->llvm_value;
+LLVMValueRef emit_thir_function(LLVM_Emit_Context *ctx, THIR *node) {
 
-    LLVMMetadataRef func_type_di = LLVMDIBuilderCreateSubroutineType(
-        ctx->di_builder, ctx->di_file, NULL, 0, 0);
+  LLVMValueRef function = emit_thir_function_forward_declaration(ctx, node);
 
-    LLVMMetadataRef func_di = LLVMDIBuilderCreateFunction(
-        ctx->di_builder, ctx->di_file, node->function.name.data,
-        node->function.name.length, node->function.name.data,
-        node->function.name.length, ctx->di_file, node->location.line,
-        func_type_di, 1, 1, 0, 0, 0);
-
-    LLVMMetadataRef old_scope = ctx->scope;
-    ctx->scope = func_di;
-
-    LLVMSetSubprogram(function, func_di);
-
-    LLVMBasicBlockRef entry =
-        LLVMAppendBasicBlockInContext(ctx->context, function, "entry");
-    LLVMPositionBuilderAtEnd(ctx->builder, entry);
-
-    LLVMMetadataRef scope = func_di;
-    LLVMMetadataRef debug_loc = LLVMDIBuilderCreateDebugLocation(
-        ctx->context, node->location.line, 0, scope, NULL);
-    LLVMSetCurrentDebugLocation2(ctx->builder, debug_loc);
-
-    emit_block(ctx, node->function.block);
-
-    if (strncmp(node->function.return_type.data, "void", 4) == 0) {
-      LLVMBuildRetVoid(ctx->builder);
-    }
-
-    ctx->scope = old_scope;
-    LLVMSetCurrentDebugLocation(ctx->builder, NULL);
+  if (node->function.is_extern) {
+    return function;
   }
+
+  LLVMBasicBlockRef entry = LLVMAppendBasicBlockInContext(ctx->context, function, "entry");
+  LLVMPositionBuilderAtEnd(ctx->builder, entry);
+  emit_thir_node(ctx, node->function.block);
+  Type *fn_type = get_type(node->type);
+  if (fn_type->$function.$return == VOID) {
+    LLVMBuildRetVoid(ctx->builder);
+  }
+  node->function.llvm_function = function;
   return nullptr;
 }
 
-LLVMValueRef emit_function_call(LLVM_Emit_Context *ctx, AST *node) {
-  Symbol *symbol = find_symbol(node, node->call.name);
-  LLVMValueRef function = symbol->llvm_value;
-  LLVMValueRef args[node->call.arguments.length];
-
-  for (int i = 0; i < node->call.arguments.length; ++i) {
-    LLVMValueRef arg = emit_node(ctx, V_AT(AST *, node->call.arguments, i));
-    args[i] = arg;
-  }
-
-  LLVMMetadataRef scope = ctx->scope;
-  LLVMMetadataRef debug_loc = LLVMDIBuilderCreateDebugLocation(
-      ctx->context, node->location.line, node->location.column, scope, NULL);
-  LLVMSetCurrentDebugLocation2(ctx->builder, debug_loc);
-
-  // Emit the function call
-  LLVMValueRef call =
-      LLVMBuildCall2(ctx->builder, symbol->llvm_function_type, function, args,
-                     node->call.arguments.length, "");
-
-  // Clear the current debug location
-  LLVMSetCurrentDebugLocation2(ctx->builder, NULL);
-
-  return call;
+LLVMValueRef emit_thir_type_declaration(LLVM_Emit_Context *ctx, THIR *node) {
+  to_llvm_type(ctx, get_type(node->type));
+  return NULL;
 }
 
-LLVMValueRef emit_type_declaration(LLVM_Emit_Context *ctx, AST *node) {
-  to_llvm_type(ctx, find_type(node->declaration.name));
-  return nullptr;
+LLVMValueRef emit_thir_variable_declaration(LLVM_Emit_Context *ctx, THIR *node) {
+  LLVMTypeRef var_type = to_llvm_type(ctx, get_type(node->type));
+  LLVMValueRef var = LLVMBuildAlloca(ctx->builder, var_type, node->variable.name.data);
+  // TODO: Store LLVMValueRef in your symbol table for this variable
+
+  if (node->variable.value) {
+    LLVMValueRef init = emit_thir_node(ctx, node->variable.value);
+    LLVMBuildStore(ctx->builder, init, var);
+  }
+  return var;
 }
 
-LLVMValueRef emit_identifier(LLVM_Emit_Context *ctx, AST *node) {
-  Symbol *symbol = find_symbol(node, node->identifier);
-
-  auto llvm_type = to_llvm_type(ctx, get_type(symbol->type));
-
-  LLVMValueRef value = nullptr;
-
-  // TODO: we should probably just do this when we emit a function, not every
-  // time we need to look up a parameter.
-  if (symbol->llvm_value == nullptr) {
-    LLVMValueRef function =
-        LLVMGetBasicBlockParent(LLVMGetInsertBlock(ctx->builder));
-    unsigned param_index = get_parameter_index(symbol->node, node->identifier);
-    return LLVMGetParam(function, param_index);
-  } else {
-    value = symbol->llvm_value;
-  }
-
+LLVMValueRef emit_thir_identifier(LLVM_Emit_Context *ctx, THIR *node) {
+  // TODO: Lookup symbol in your THIR symbol table
+  LLVMValueRef value = emit_thir_node(ctx, node->identifier.resolved);
+  LLVMTypeRef llvm_type = to_llvm_type(ctx, get_type(node->type));
   if (ctx->dont_load) {
     return value;
   } else {
-    return LLVMBuildLoad2(ctx->builder, llvm_type, value, symbol->name.data);
+    return LLVMBuildLoad2(ctx->builder, llvm_type, value, node->identifier.name.data);
   }
 }
 
-LLVMValueRef emit_number(LLVM_Emit_Context *ctx, AST *node) {
+LLVMValueRef emit_thir_number(LLVM_Emit_Context *ctx, THIR *node) {
   return LLVMConstInt(LLVMInt32Type(), atoll(node->number.data), false);
 }
 
-// for making string literals with '\escape chars' work.
-static inline char *unescape_string_lit(const char *s) {
-  size_t len = strlen(s);
-  char *res = (char *)malloc(len + 1); // Allocate memory for the result
-  char *dst = res;
-  const char *src = s;
-
-  while (*src) {
-    if (*src == '\\') {
-      src++;
-      switch (*src) {
-      case 'e':
-        *dst++ = '\x1B';
-        break;
-      case 'n':
-        *dst++ = '\n';
-        break;
-      case 't':
-        *dst++ = '\t';
-        break;
-      case 'r':
-        *dst++ = '\r';
-        break;
-      case 'f':
-        *dst++ = '\f';
-        break;
-      case 'v':
-        *dst++ = '\v';
-        break;
-      case 'a':
-        *dst++ = '\a';
-        break;
-      case 'b':
-        *dst++ = '\b';
-        break;
-      case '\\':
-        *dst++ = '\\';
-        break;
-      case '\'':
-        *dst++ = '\'';
-        break;
-      case '\"':
-        *dst++ = '\"';
-        break;
-      case '\?':
-        *dst++ = '\?';
-        break;
-      case '0':
-        *dst++ = '\0';
-        break;
-      default:
-        // If the character following the backslash is not a recognized escape
-        // sequence, append the backslash followed by the character itself.
-        *dst++ = '\\';
-        *dst++ = *src;
-        break;
-      }
-    } else {
-      *dst++ = *src;
-    }
-    src++;
-  }
-  *dst = '\0'; // Null-terminate the result
-  return res;
-}
-
-LLVMValueRef emit_string(LLVM_Emit_Context *ctx, AST *node) {
+LLVMValueRef emit_thir_string(LLVM_Emit_Context *ctx, THIR *node) {
   char *encoded_str = unescape_string_lit(node->string.data);
   LLVMValueRef result = LLVMBuildGlobalString(ctx->builder, encoded_str, "str");
   free(encoded_str);
   return result;
 }
 
-LLVMValueRef emit_variable_declaration(LLVM_Emit_Context *ctx, AST *node) {
-  LLVMTypeRef var_type = to_llvm_type(ctx, find_type(node->variable.type));
-  LLVMValueRef var =
-      LLVMBuildAlloca(ctx->builder, var_type, node->variable.name.data);
-  find_symbol(node, node->variable.name)->llvm_value = var;
+LLVMValueRef emit_thir_member_access(LLVM_Emit_Context *ctx, THIR *node) {
+  DONT_LOAD(old_state, ctx, LLVMValueRef left = emit_thir_node(ctx, node->member_access.base);)
+  Type *left_type = get_type(node->member_access.base->type);
+  size_t member_index = get_member_index(left_type, node->member_access.member);
+  Type *member_type = get_type(V_AT(Type_Member, left_type->$struct.members, member_index).type);
+  LLVMValueRef gep = LLVMBuildStructGEP2(ctx->builder, to_llvm_type(ctx, left_type), left, member_index, "dotexpr");
 
-  // Create debug location
-  LLVMMetadataRef debug_location =
-      LLVMDIBuilderCreateDebugLocation(ctx->context, node->location.line,
-                                       node->location.column, ctx->scope, NULL);
-
-  // Attach debug location to the allocation instruction
-  LLVMInstructionSetDebugLoc(var, debug_location);
-
-  if (node->variable.value) {
-    LLVMValueRef init = emit_node(ctx, node->variable.value);
-    LLVMBuildStore(ctx->builder, init, var);
-
-    // Attach debug location to the store instruction
-    LLVMSetInstDebugLocation(ctx->builder, LLVMMetadataAsValue(ctx->context, debug_location));
-  } else {
-    // TODO: figure out why memset refuses to link.
-    // TODO; we should have zero-initialization-by-default;
-    // LLVMValueRef zero = LLVMConstInt(LLVMInt32Type(), 0, false);
-    // LLVMValueRef size = LLVMSizeOf(var_type);
-    // unsigned alignment = LLVMABIAlignmentOfType(ctx->target_data, var_type);
-    // LLVMBuildMemSet(ctx->builder, var, zero, size, alignment);
-  }
-
-  return var;
-}
-
-LLVMValueRef emit_dot_expression(LLVM_Emit_Context *ctx, AST *node) {
-  // Create debug location
-  LLVMMetadataRef debug_location = LLVMDIBuilderCreateDebugLocation(
-      ctx->context, node->location.line, node->location.column, ctx->scope, NULL);
-
-  DONT_LOAD(old_state, ctx, LLVMValueRef left = emit_node(ctx, node->dot.left);)
-  Type *left_type = get_type(node->dot.left->type);
-  size_t member_index = get_member_index(left_type, node->dot.member_name);
-  Type *member_type = get_type(
-      V_AT(Type_Member, left_type->$struct.members, member_index).type);
-  LLVMValueRef gep =
-      LLVMBuildStructGEP2(ctx->builder, to_llvm_type(ctx, left_type), left,
-                          member_index, "dotexpr");
-
-  // Attach debug location to the GEP instruction
-  LLVMInstructionSetDebugLoc(gep, debug_location);
-
-  // For assignment.
   if (ctx->dont_load) {
     return gep;
   } else {
     LLVMTypeRef llvm_member_type = to_llvm_type(ctx, member_type);
     LLVMValueRef load = LLVMBuildLoad2(ctx->builder, llvm_member_type, gep, "load_dot_expr");
-
-    // Attach debug location to the load instruction
-    LLVMInstructionSetDebugLoc(load, debug_location);
-
     return load;
   }
 }
 
-LLVMValueRef emit_binary_expression(LLVM_Emit_Context *ctx, AST *node) {
-  // Create debug location
-  LLVMMetadataRef debug_location = LLVMDIBuilderCreateDebugLocation(
-      ctx->context, node->location.line, node->location.column, ctx->scope, NULL);
+LLVMValueRef emit_thir_call(LLVM_Emit_Context *ctx, THIR *node) {
+  LLVMValueRef function = emit_thir_node(ctx, node->call.function);
 
-  if (node->binary.operator == TOKEN_ASSIGN) {
-    DONT_LOAD(old_state, ctx,
-              LLVMValueRef left = emit_node(ctx, node->binary.left);)
-    LLVMValueRef right = emit_node(ctx, node->binary.right);
+  size_t argc = node->call.arguments.length;
+  LLVMValueRef args[argc];
+  for (size_t i = 0; i < argc; ++i) {
+    args[i] = emit_thir_node(ctx, node->call.arguments.nodes[i]);
+  }
+  LLVMTypeRef fn_type = to_llvm_type(ctx, get_type(node->call.function->type));
+  LLVMValueRef call = LLVMBuildCall2(ctx->builder, fn_type, function, args, argc, "");
+  return call;
+}
+
+LLVMValueRef emit_thir_binary_expression(LLVM_Emit_Context *ctx, THIR *node) {
+  if (node->binary.operator== TOKEN_ASSIGN) {
+    DONT_LOAD(old_state, ctx, LLVMValueRef left = emit_thir_node(ctx, node->binary.left);)
+    LLVMValueRef right = emit_thir_node(ctx, node->binary.right);
     LLVMBuildStore(ctx->builder, right, left);
-
-    // Attach debug location to the store instruction
-    LLVMSetInstDebugLocation(ctx->builder, LLVMMetadataAsValue(ctx->context, debug_location));
-
     return nullptr;
   }
 
-  LLVMValueRef left = emit_node(ctx, node->binary.left);
-  LLVMValueRef right = emit_node(ctx, node->binary.right);
+  LLVMValueRef left = emit_thir_node(ctx, node->binary.left);
+  LLVMValueRef right = emit_thir_node(ctx, node->binary.right);
 
   LLVMValueRef result;
   switch (node->binary.operator) {
-  case TOKEN_ADD:
-    result = LLVMBuildAdd(ctx->builder, left, right, "addtmp");
-    break;
-  case TOKEN_SUB:
-    result = LLVMBuildSub(ctx->builder, left, right, "subtmp");
-    break;
-  case TOKEN_MUL:
-    result = LLVMBuildMul(ctx->builder, left, right, "multmp");
-    break;
-  case TOKEN_DIV:
-    result = LLVMBuildSDiv(ctx->builder, left, right, "divtmp");
-    break;
-  case TOKEN_MOD:
-    result = LLVMBuildSRem(ctx->builder, left, right, "modtmp");
-    break;
-  case TOKEN_AND:
-    result = LLVMBuildAnd(ctx->builder, left, right, "andtmp");
-    break;
-  case TOKEN_OR:
-    result = LLVMBuildOr(ctx->builder, left, right, "ortmp");
-    break;
-  case TOKEN_XOR:
-    result = LLVMBuildXor(ctx->builder, left, right, "xortmp");
-    break;
-  case TOKEN_SHL:
-    result = LLVMBuildShl(ctx->builder, left, right, "shltmp");
-    break;
-  case TOKEN_SHR:
-    result = LLVMBuildLShr(ctx->builder, left, right, "shrtmp");
-    break;
-  case TOKEN_EQ:
-    result = LLVMBuildICmp(ctx->builder, LLVMIntEQ, left, right, "eqtmp");
-    break;
-  case TOKEN_NEQ:
-    result = LLVMBuildICmp(ctx->builder, LLVMIntNE, left, right, "neqtmp");
-    break;
-  case TOKEN_LT:
-    result = LLVMBuildICmp(ctx->builder, LLVMIntSLT, left, right, "lttmp");
-    break;
-  case TOKEN_GT:
-    result = LLVMBuildICmp(ctx->builder, LLVMIntSGT, left, right, "gttmp");
-    break;
-  case TOKEN_LTE:
-    result = LLVMBuildICmp(ctx->builder, LLVMIntSLE, left, right, "ltetmp");
-    break;
-  case TOKEN_GTE:
-    result = LLVMBuildICmp(ctx->builder, LLVMIntSGE, left, right, "gtetmp");
-    break;
-  default:
-    fprintf(stderr, "Unknown binary operator: %d\n", node->binary.operator);
-    exit(1);
+    case TOKEN_ADD:
+      result = LLVMBuildAdd(ctx->builder, left, right, "addtmp");
+      break;
+    case TOKEN_SUB:
+      result = LLVMBuildSub(ctx->builder, left, right, "subtmp");
+      break;
+    case TOKEN_MUL:
+      result = LLVMBuildMul(ctx->builder, left, right, "multmp");
+      break;
+    case TOKEN_DIV:
+      result = LLVMBuildSDiv(ctx->builder, left, right, "divtmp");
+      break;
+    case TOKEN_MOD:
+      result = LLVMBuildSRem(ctx->builder, left, right, "modtmp");
+      break;
+    case TOKEN_AND:
+      result = LLVMBuildAnd(ctx->builder, left, right, "andtmp");
+      break;
+    case TOKEN_OR:
+      result = LLVMBuildOr(ctx->builder, left, right, "ortmp");
+      break;
+    case TOKEN_XOR:
+      result = LLVMBuildXor(ctx->builder, left, right, "xortmp");
+      break;
+    case TOKEN_SHL:
+      result = LLVMBuildShl(ctx->builder, left, right, "shltmp");
+      break;
+    case TOKEN_SHR:
+      result = LLVMBuildLShr(ctx->builder, left, right, "shrtmp");
+      break;
+    case TOKEN_EQ:
+      result = LLVMBuildICmp(ctx->builder, LLVMIntEQ, left, right, "eqtmp");
+      break;
+    case TOKEN_NEQ:
+      result = LLVMBuildICmp(ctx->builder, LLVMIntNE, left, right, "neqtmp");
+      break;
+    case TOKEN_LT:
+      result = LLVMBuildICmp(ctx->builder, LLVMIntSLT, left, right, "lttmp");
+      break;
+    case TOKEN_GT:
+      result = LLVMBuildICmp(ctx->builder, LLVMIntSGT, left, right, "gttmp");
+      break;
+    case TOKEN_LTE:
+      result = LLVMBuildICmp(ctx->builder, LLVMIntSLE, left, right, "ltetmp");
+      break;
+    case TOKEN_GTE:
+      result = LLVMBuildICmp(ctx->builder, LLVMIntSGE, left, right, "gtetmp");
+      break;
+    default:
+      fprintf(stderr, "Unknown binary operator: %d\n", node->binary.operator);
+      exit(1);
   }
-
-  // Attach debug location to the result instruction
-  LLVMInstructionSetDebugLoc(result, debug_location);
-
   return result;
 }
 
-LLVMValueRef emit_return_statement(LLVM_Emit_Context *ctx, AST *node) {
-  LLVMMetadataRef debug_location = LLVMDIBuilderCreateDebugLocation(
-      ctx->context, node->location.line, node->location.column, ctx->scope, NULL);
-
+LLVMValueRef emit_thir_return(LLVM_Emit_Context *ctx, THIR *node) {
   if (node->return_expression) {
-    LLVMValueRef ret_val = emit_node(ctx, node->return_expression);
+    LLVMValueRef ret_val = emit_thir_node(ctx, node->return_expression);
     LLVMBuildRet(ctx->builder, ret_val);
-
-    // Attach debug location to the return instruction
-    LLVMBasicBlockRef current_block = LLVMGetInsertBlock(ctx->builder);
-    LLVMValueRef last_instruction = LLVMGetLastInstruction(current_block);
-    LLVMInstructionSetDebugLoc(last_instruction, debug_location);
   } else {
     LLVMBuildRetVoid(ctx->builder);
-    // Attach debug location to the return void instruction
-    LLVMSetInstDebugLocation(ctx->builder, LLVMMetadataAsValue(ctx->context, debug_location));
   }
   return nullptr;
 }
 
-LLVMValueRef emit_block(LLVM_Emit_Context *ctx, AST *node) {
-  for (int i = 0; i < node->statements.length; ++i) {
-    emit_node(ctx, node->statements.data[i]);
+LLVMValueRef emit_thir_block(LLVM_Emit_Context *ctx, THIR *node) {
+  for (size_t i = 0; i < node->statements.length; ++i) {
+    emit_thir_node(ctx, node->statements.nodes[i]);
   }
   return nullptr;
 }
 
-LLVMValueRef emit_node(LLVM_Emit_Context *ctx, AST *node) {
+LLVMValueRef emit_thir_node(LLVM_Emit_Context *ctx, THIR *node) {
   switch (node->kind) {
-  case AST_NODE_PROGRAM:
-    return emit_program(ctx, node);
-  case AST_NODE_IDENTIFIER:
-    return emit_identifier(ctx, node);
-  case AST_NODE_NUMBER:
-    return emit_number(ctx, node);
-  case AST_NODE_STRING:
-    return emit_string(ctx, node);
-  case AST_NODE_FUNCTION_DECLARATION:
-    return emit_function_declaration(ctx, node);
-  case AST_NODE_TYPE_DECLARATION:
-    return emit_type_declaration(ctx, node);
-  case AST_NODE_VARIABLE_DECLARATION:
-    return emit_variable_declaration(ctx, node);
-  case AST_NODE_DOT_EXPRESSION:
-    return emit_dot_expression(ctx, node);
-  case AST_NODE_FUNCTION_CALL:
-    return emit_function_call(ctx, node);
-  case AST_NODE_BLOCK:
-    return emit_block(ctx, node);
-  case AST_NODE_BINARY_EXPRESSION:
-    return emit_binary_expression(ctx, node);
-  case AST_NODE_RETURN:
-    return emit_return_statement(ctx, node);
-  default:
-    fprintf(stderr, "Unknown AST node kind: %d\n", node->kind);
-    exit(1);
+    case THIR_PROGRAM:
+      return emit_thir_program(ctx, node);
+    case THIR_BLOCK:
+      return emit_thir_block(ctx, node);
+    case THIR_TYPE_DECLARATION:
+      return emit_thir_type_declaration(ctx, node);
+    case THIR_FUNCTION:
+      return emit_thir_function(ctx, node);
+    case THIR_VARIABLE_DECLARATION:
+      return emit_thir_variable_declaration(ctx, node);
+    case THIR_IDENTIFIER:
+      return emit_thir_identifier(ctx, node);
+    case THIR_NUMBER:
+      return emit_thir_number(ctx, node);
+    case THIR_STRING:
+      return emit_thir_string(ctx, node);
+    case THIR_MEMBER_ACCESS:
+      return emit_thir_member_access(ctx, node);
+    case THIR_CALL:
+      return emit_thir_call(ctx, node);
+    case THIR_BINARY_EXPRESSION:
+      return emit_thir_binary_expression(ctx, node);
+    case THIR_RETURN:
+      return emit_thir_return(ctx, node);
+    default:
+      fprintf(stderr, "Unknown THIR node kind: %d\n", node->kind);
+      exit(1);
   }
 }
